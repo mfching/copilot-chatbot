@@ -1,0 +1,235 @@
+<UserControl x:Class="CopilotChatbot.ChatTabContent"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+    <DockPanel>
+
+        <!-- ── Input panel (very bottom) ──────────────────────────────────── -->
+        <Border DockPanel.Dock="Bottom" Margin="6,0,6,8"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource BorderBrushModern}"
+                BorderThickness="1" CornerRadius="12" Padding="10">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="18" ShadowDepth="1" Opacity="0.10" />
+            </Border.Effect>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- TextBox + beam overlay -->
+                <Grid>
+                    <TextBox x:Name="PromptBox"
+                             MinHeight="88" MaxHeight="180"
+                             AcceptsReturn="True" TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto"
+                             Background="{DynamicResource PanelBrush}"
+                             Foreground="{DynamicResource TextBrush}"
+                             BorderBrush="{DynamicResource BorderBrushModern}"
+                             CaretBrush="{DynamicResource TextBrush}"
+                             SelectionBrush="{DynamicResource AccentBrush}"
+                             FontSize="14" Padding="10" BorderThickness="1"
+                             KeyDown="PromptBox_KeyDown">
+                        <TextBox.Template>
+                            <ControlTemplate TargetType="TextBox">
+                                <Border x:Name="Chr"
+                                        Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        CornerRadius="6">
+                                    <ScrollViewer x:Name="PART_ContentHost"
+                                                  Focusable="False"
+                                                  HorizontalScrollBarVisibility="Disabled"
+                                                  VerticalScrollBarVisibility="Auto"
+                                                  Padding="{TemplateBinding Padding}" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Chr" Property="BorderBrush" Value="#9BA4AE" />
+                                    </Trigger>
+                                    <Trigger Property="IsFocused" Value="True">
+                                        <Setter TargetName="Chr" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                    </Trigger>
+                                    <Trigger Property="IsEnabled" Value="False">
+                                        <Setter TargetName="Chr" Property="Background" Value="{DynamicResource DisabledControlBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource DisabledTextBrush}" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </TextBox.Template>
+                    </TextBox>
+
+                    <!-- Animated border beam (shown while pending) -->
+                    <Rectangle x:Name="PromptBeam"
+                               HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                               Fill="Transparent" StrokeThickness="2"
+                               RadiusX="8" RadiusY="8" StrokeDashCap="Round"
+                               IsHitTestVisible="False" Visibility="Collapsed">
+                        <Rectangle.Stroke>
+                            <SolidColorBrush x:Name="BeamBrush" Color="#FFFF4545" />
+                        </Rectangle.Stroke>
+                        <Rectangle.Effect>
+                            <BlurEffect Radius="3" />
+                        </Rectangle.Effect>
+                    </Rectangle>
+                </Grid>
+
+                <!-- Send button -->
+                <Button x:Name="SendBtn" Grid.Column="1" Width="104" Margin="10,0,0,0"
+                        VerticalAlignment="Stretch" Cursor="Hand"
+                        Click="SendBtn_Click">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Chr"
+                                    Background="{DynamicResource AccentBrush}"
+                                    BorderBrush="{DynamicResource AccentBrush}"
+                                    BorderThickness="1" CornerRadius="9">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  Margin="15,8"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Chr" Property="Background" Value="#0856B3" />
+                                    <Setter TargetName="Chr" Property="BorderBrush" Value="#0856B3" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Chr" Property="Background" Value="#0648A0" />
+                                    <Setter TargetName="Chr" Property="BorderBrush" Value="#0648A0" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="Chr" Property="Background" Value="{DynamicResource DisabledControlBrush}" />
+                                    <Setter TargetName="Chr" Property="BorderBrush" Value="{DynamicResource DisabledBorderBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource DisabledTextBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Button.Foreground><SolidColorBrush Color="White"/></Button.Foreground>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <ui:SymbolIcon Symbol="Send20" FontSize="17" Margin="0,0,6,0" />
+                        <TextBlock Text="Send" FontWeight="SemiBold" />
+                    </StackPanel>
+                </Button>
+
+                <!-- Stop button -->
+                <Button x:Name="StopBtn" Grid.Column="2" Width="92" Margin="10,0,0,0"
+                        VerticalAlignment="Stretch" Cursor="Hand"
+                        IsEnabled="False" Visibility="Collapsed"
+                        Click="StopBtn_Click">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Chr" Background="#DC2626" BorderBrush="#DC2626"
+                                    BorderThickness="1" CornerRadius="9">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  Margin="15,8"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Chr" Property="Background" Value="#B91C1C" />
+                                    <Setter TargetName="Chr" Property="BorderBrush" Value="#B91C1C" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Chr" Property="Background" Value="#991B1B" />
+                                    <Setter TargetName="Chr" Property="BorderBrush" Value="#991B1B" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="Chr" Property="Background" Value="{DynamicResource DisabledControlBrush}" />
+                                    <Setter TargetName="Chr" Property="BorderBrush" Value="{DynamicResource DisabledBorderBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource DisabledTextBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Button.Foreground><SolidColorBrush Color="White"/></Button.Foreground>
+                    <TextBlock Text="Stop" FontWeight="SemiBold" />
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- ── Copilot activity bar (just above the input) ─────────────────── -->
+        <Border x:Name="ActivityBar" DockPanel.Dock="Bottom"
+                Margin="8,0,8,3" Padding="10,5"
+                Background="Transparent">
+            <DockPanel LastChildFill="False">
+                <!-- Scroll-to-bottom button (right-aligned) -->
+                <Button x:Name="ScrollToBottomBtn" DockPanel.Dock="Right"
+                        Width="24" Height="24" Cursor="Hand"
+                        ToolTip="Scroll to bottom"
+                        Click="ScrollToBottom_Click">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Chr"
+                                    Background="{DynamicResource SurfaceBrush}"
+                                    BorderBrush="{DynamicResource BorderBrushModern}"
+                                    BorderThickness="1" CornerRadius="12">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="6" ShadowDepth="0" Opacity="0.15" />
+                                </Border.Effect>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Chr" Property="Background" Value="{DynamicResource ControlBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Chr" Property="Background" Value="{DynamicResource BorderBrushModern}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <ui:SymbolIcon Symbol="ArrowDown20" FontSize="12"
+                                   Foreground="{DynamicResource MutedTextBrush}" />
+                </Button>
+
+                <!-- Scroll-to-top button (left of scroll-to-bottom) -->
+                <Button x:Name="ScrollToTopBtn" DockPanel.Dock="Right"
+                        Width="24" Height="24" Margin="0,0,6,0" Cursor="Hand"
+                        ToolTip="Scroll to top"
+                        Click="ScrollToTop_Click">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Chr"
+                                    Background="{DynamicResource SurfaceBrush}"
+                                    BorderBrush="{DynamicResource BorderBrushModern}"
+                                    BorderThickness="1" CornerRadius="12">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="6" ShadowDepth="0" Opacity="0.15" />
+                                </Border.Effect>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Chr" Property="Background" Value="{DynamicResource ControlBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Chr" Property="Background" Value="{DynamicResource BorderBrushModern}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <ui:SymbolIcon Symbol="ArrowUp20" FontSize="12"
+                                   Foreground="{DynamicResource MutedTextBrush}" />
+                </Button>
+
+                <!-- Status indicator (left, fills remaining space) -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Ellipse x:Name="ActivityDot" Width="6" Height="6"
+                             Fill="{DynamicResource AccentBrush}"
+                             Opacity="0.4"
+                             VerticalAlignment="Center" Margin="0,0,7,0" />
+                    <TextBlock x:Name="ActivityText" Text="Ready"
+                               Foreground="{DynamicResource MutedTextBrush}"
+                               FontSize="11" FontStyle="Italic" VerticalAlignment="Center" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- ── Browser host (fills remaining space) ────────────────────────── -->
+        <ContentControl x:Name="BrowserHost" />
+
+    </DockPanel>
+</UserControl>

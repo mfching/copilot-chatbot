@@ -164,7 +164,7 @@ document.addEventListener('click', e => {
 
     public string RenderMessageFragment(ChatMessage message, bool darkTheme) => RenderMessage(message, darkTheme);
 
-    public string RenderStandalone(ChatMessage message) => RenderFrameSource(message, includeDocumentShell: true, darkTheme: false);
+    public string RenderStandalone(ChatMessage message, bool darkTheme = false) => RenderFrameSource(message, includeDocumentShell: true, darkTheme: darkTheme);
 
     private string RenderMessage(ChatMessage message, bool darkTheme)
     {

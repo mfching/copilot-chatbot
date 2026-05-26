@@ -25,6 +25,7 @@ public partial class MainWindow : Window
     private readonly CopilotChatService _copilot;
     private readonly List<ModelChoice> _models = [];
     private readonly Dictionary<ChatSessionView, long> _renderRevisions = [];
+    private readonly Dictionary<ChatSessionView, ChatTabContent> _tabContents = [];
     private AppSettings _settings;
     private bool _isDarkTheme;
     private bool _showDetailMessages;
@@ -118,6 +119,14 @@ public partial class MainWindow : Window
         window.Show();
     }
 
+    private void SessionPromptButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (CurrentChat is not { } chat) return;
+        var window = new SessionSystemPromptWindow(chat, _settings.DefaultSystemPrompt, this);
+        window.PromptApplied += _ => SaveOpenChats();
+        window.Show();
+    }
+
     private void SettingsButton_Click(object sender, RoutedEventArgs e)
     {
         var window = new SettingsWindow(_settingsStore, _settings, _debugLogger) { Owner = this };
@@ -130,26 +139,12 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void SendButton_Click(object sender, RoutedEventArgs e) => await SendCurrentPromptAsync();
-
-    private async void StopButton_Click(object sender, RoutedEventArgs e) => await StopCurrentOperationAsync();
-
-    private async void PromptTextBox_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
-        {
-            e.Handled = true;
-            await SendCurrentPromptAsync();
-        }
-    }
 
     private void ChatTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (e.Source == ChatTabs)
         {
             RenderCurrentChat();
-            UpdateInputState();
-            UpdateStatusBar(CurrentChat);
             SaveOpenChats();
         }
     }
@@ -176,20 +171,14 @@ public partial class MainWindow : Window
         _settingsStore.Save(_settings);
     }
 
-    private async Task SendCurrentPromptAsync()
+    private async Task SendChatAsync(ChatSessionView chat, string prompt)
     {
-        var chat = CurrentChat;
-        var prompt = PromptTextBox.Text;
-        if (chat is null || chat.IsSessionMissing || string.IsNullOrWhiteSpace(prompt))
-        {
-            return;
-        }
+        if (chat.IsSessionMissing || string.IsNullOrWhiteSpace(prompt)) return;
 
-        PromptTextBox.Clear();
         chat.Messages.Add(new ChatMessage { Kind = ChatMessageKind.User, Content = prompt });
         RenderChat(chat);
         chat.IsPending = true;
-        UpdateInputState();
+        GetTabContent(chat)?.SetState(true, false);
 
         try
         {
@@ -202,19 +191,15 @@ public partial class MainWindow : Window
             chat.IsPending = false;
             chat.Messages.Add(new ChatMessage { Kind = ChatMessageKind.Error, Content = ex.Message });
             RenderChat(chat);
-            UpdateInputState();
+            GetTabContent(chat)?.SetState(false, chat.IsSessionMissing);
             SaveOpenChats();
         }
     }
 
-    private async Task StopCurrentOperationAsync()
+    private async Task StopChatAsync(ChatSessionView chat)
     {
-        if (CurrentChat is not { } chat || !chat.IsPending)
-        {
-            return;
-        }
+        if (!chat.IsPending) return;
 
-        StopButton.IsEnabled = false;
         try
         {
             await _copilot.AbortAsync(chat);
@@ -229,9 +214,12 @@ public partial class MainWindow : Window
         finally
         {
             chat.IsPending = false;
-            UpdateInputState();
+            GetTabContent(chat)?.SetState(false, chat.IsSessionMissing);
         }
     }
+
+    private ChatTabContent? GetTabContent(ChatSessionView chat) =>
+        _tabContents.TryGetValue(chat, out var tc) ? tc : null;
 
     private async Task RefreshModelsAsync(bool showErrorDialog, bool allowFallback)
     {
@@ -307,51 +295,13 @@ public partial class MainWindow : Window
         Dispatcher.Invoke(() =>
         {
             chat.LastStatus = status;
-            if (ReferenceEquals(chat, CurrentChat))
-                UpdateStatusBar(chat);
+            GetTabContent(chat)?.SetStatus(status);
         });
     }
 
     private void UpdateStatusBar(ChatSessionView? chat)
     {
-        var status = chat?.LastStatus;
-        if (string.IsNullOrEmpty(status))
-        {
-            CopilotStatusBar.Visibility = Visibility.Collapsed;
-            StopStatusDotAnimation();
-        }
-        else
-        {
-            CopilotStatusText.Text = status;
-            CopilotStatusBar.Visibility = Visibility.Visible;
-            StartStatusDotAnimation();
-        }
-    }
-
-    private Storyboard? _statusDotStoryboard;
-
-    private void StartStatusDotAnimation()
-    {
-        if (_statusDotStoryboard != null) return;
-        _statusDotStoryboard = new Storyboard();
-        var anim = new DoubleAnimation
-        {
-            From = 1.0,
-            To = 0.25,
-            Duration = new Duration(TimeSpan.FromSeconds(0.65)),
-            AutoReverse = true,
-            RepeatBehavior = RepeatBehavior.Forever
-        };
-        Storyboard.SetTarget(anim, StatusDot);
-        Storyboard.SetTargetProperty(anim, new PropertyPath(UIElement.OpacityProperty));
-        _statusDotStoryboard.Children.Add(anim);
-        _statusDotStoryboard.Begin(this);
-    }
-
-    private void StopStatusDotAnimation()
-    {
-        _statusDotStoryboard?.Stop();
-        _statusDotStoryboard = null;
+        if (chat is not null) GetTabContent(chat)?.SetStatus(chat.LastStatus);
     }
 
     private void Copilot_SessionPendingChanged(ChatSessionView chat, bool isPending)
@@ -359,16 +309,11 @@ public partial class MainWindow : Window
         Dispatcher.Invoke(() =>
         {
             chat.IsPending = isPending;
-            if (ReferenceEquals(chat, CurrentChat))
+            GetTabContent(chat)?.SetState(isPending, chat.IsSessionMissing);
+            if (!isPending)
             {
-                UpdateInputState();
-                // Re-render once after the response completes so that CompletedAt
-                // (stamped in SetPending just before this event fires) appears in the header.
-                if (!isPending)
-                {
-                    RenderChat(chat);
-                    SaveOpenChats();
-                }
+                RenderChat(chat);
+                SaveOpenChats();
             }
         });
     }
@@ -441,7 +386,14 @@ public partial class MainWindow : Window
         }
         chat.Messages.CollectionChanged += ChatMessages_CollectionChanged;
 
-        var tab = new TabItem { Content = chat.Browser, Tag = chat };
+        var tabContent = new ChatTabContent();
+        tabContent.SetBrowser(chat.Browser);
+        tabContent.SendRequested += prompt => _ = SendChatAsync(chat, prompt);
+        tabContent.StopRequested += () => _ = StopChatAsync(chat);
+        _tabContents[chat] = tabContent;
+        tabContent.SetState(chat.IsPending, chat.IsSessionMissing);
+
+        var tab = new TabItem { Content = tabContent, Tag = chat };
         SetTabHeader(tab, chat.Title);
         ChatTabs.Items.Add(tab);
         if (select)
@@ -449,7 +401,6 @@ public partial class MainWindow : Window
             ChatTabs.SelectedItem = tab;
         }
         ChatTabs.UpdateLayout();
-        UpdateInputState();
 
         chat.Browser.DefaultBackgroundColor = _isDarkTheme
             ? System.Drawing.Color.FromArgb(255, 17, 24, 39)
@@ -598,8 +549,7 @@ public partial class MainWindow : Window
             Content = reason + "\n\nThis restored chat is read-only. Close it to remove it from startup, or start a new chat."
         });
         RenderChat(chat);
-        if (ReferenceEquals(chat, CurrentChat))
-            UpdateInputState();
+        GetTabContent(chat)?.SetState(false, true);
     }
 
     private void SaveOpenChats()
@@ -698,6 +648,11 @@ public partial class MainWindow : Window
         if (tab.Tag is ChatSessionView chat)
         {
             _renderRevisions.Remove(chat);
+            if (_tabContents.TryGetValue(chat, out var tabContent))
+            {
+                tabContent.Cleanup();
+                _tabContents.Remove(chat);
+            }
             try { await _copilot.CloseSessionAsync(chat); } catch { /* ignore on close */ }
         }
         SaveOpenChats();
@@ -753,7 +708,7 @@ public partial class MainWindow : Window
         var message = (sourceChat ?? CurrentChat)?.Messages.FirstOrDefault(m => m.Id == id);
         if (message is not null)
         {
-            new ResponseWindow(_htmlRenderer, message) { Owner = this }.Show();
+            new ResponseWindow(_htmlRenderer, message, _isDarkTheme) { Owner = this }.Show();
         }
     }
 
@@ -833,78 +788,8 @@ public partial class MainWindow : Window
 
     private void UpdateInputState()
     {
-        var chat = CurrentChat;
-        var isPending = chat?.IsPending == true;
-        var canSend = chat is not null && !chat.IsSessionMissing && !isPending;
-        SendButton.IsEnabled = canSend;
-        PromptTextBox.IsEnabled = canSend;
-        StopButton.IsEnabled = isPending;
-        StopButton.Visibility = isPending ? Visibility.Visible : Visibility.Collapsed;
-        PromptBeam.Visibility = isPending ? Visibility.Visible : Visibility.Collapsed;
-        if (isPending) StartBeamAnimation(); else StopBeamAnimation();
-
-        // Disable the popup (open) buttons in the browser while streaming.
-        var browser = CurrentChat?.Browser;
-        if (browser?.CoreWebView2 != null)
-        {
-            var js = isPending
-                ? "document.querySelector('main')?.classList.add('streaming')"
-                : "document.querySelector('main')?.classList.remove('streaming')";
-            _ = browser.ExecuteScriptAsync(js);
-        }
-    }
-
-    private Storyboard? _beamStoryboard;
-
-    private void StartBeamAnimation()
-    {
-        double w = PromptTextBox.ActualWidth;
-        double h = PromptTextBox.ActualHeight;
-        if (w <= 0 || h <= 0) return;
-
-        const double strokeThickness = 2.0;
-        const double dashLengthPx = 60.0;
-        double perimeterPx = 2.0 * (w + h);
-        double perimeterUnits = perimeterPx / strokeThickness;
-        double dashUnits = dashLengthPx / strokeThickness;
-        double gapUnits = perimeterUnits - dashUnits;
-
-        PromptBeam.StrokeDashArray = new DoubleCollection { dashUnits, gapUnits };
-        PromptBeam.StrokeDashOffset = 0;
-
-        _beamStoryboard?.Stop();
-        _beamStoryboard = new Storyboard();
-
-        // Dash offset: constant perimeter speed
-        var offsetAnim = new DoubleAnimation
-        {
-            From = 0,
-            To = -perimeterUnits,
-            Duration = new Duration(TimeSpan.FromSeconds(3.5)),
-            RepeatBehavior = RepeatBehavior.Forever
-        };
-        Storyboard.SetTarget(offsetAnim, PromptBeam);
-        Storyboard.SetTargetProperty(offsetAnim, new PropertyPath(Shape.StrokeDashOffsetProperty));
-        _beamStoryboard.Children.Add(offsetAnim);
-
-        // Color cycle: red → orange-red → crimson → red
-        var colorAnim = new ColorAnimationUsingKeyFrames { RepeatBehavior = RepeatBehavior.Forever };
-        colorAnim.KeyFrames.Add(new LinearColorKeyFrame(Color.FromRgb(0xFF, 0x45, 0x45), KeyTime.FromTimeSpan(TimeSpan.Zero)));
-        colorAnim.KeyFrames.Add(new LinearColorKeyFrame(Color.FromRgb(0xFF, 0x80, 0x20), KeyTime.FromTimeSpan(TimeSpan.FromSeconds(1.2))));
-        colorAnim.KeyFrames.Add(new LinearColorKeyFrame(Color.FromRgb(0xDC, 0x14, 0x3C), KeyTime.FromTimeSpan(TimeSpan.FromSeconds(2.4))));
-        colorAnim.KeyFrames.Add(new LinearColorKeyFrame(Color.FromRgb(0xFF, 0x00, 0x00), KeyTime.FromTimeSpan(TimeSpan.FromSeconds(3.6))));
-        colorAnim.KeyFrames.Add(new LinearColorKeyFrame(Color.FromRgb(0xFF, 0x45, 0x45), KeyTime.FromTimeSpan(TimeSpan.FromSeconds(4.8))));
-        Storyboard.SetTarget(colorAnim, BeamStrokeBrush);
-        Storyboard.SetTargetProperty(colorAnim, new PropertyPath(SolidColorBrush.ColorProperty));
-        _beamStoryboard.Children.Add(colorAnim);
-
-        _beamStoryboard.Begin(this);
-    }
-
-    private void StopBeamAnimation()
-    {
-        _beamStoryboard?.Stop();
-        _beamStoryboard = null;
+        if (CurrentChat is { } chat)
+            GetTabContent(chat)?.SetState(chat.IsPending, chat.IsSessionMissing);
     }
 
     private void RenderCurrentChat()

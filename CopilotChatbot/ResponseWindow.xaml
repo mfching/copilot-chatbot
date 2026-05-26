@@ -3,8 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
-        Title="Response" Height="760" Width="980" WindowStartupLocation="CenterOwner"
-        Background="#F3F5F8">
+        Title="Response" Height="760" Width="980" WindowStartupLocation="CenterOwner">
     <Window.Resources>
         <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF" />
         <SolidColorBrush x:Key="ControlBrush" Color="#F8FAFC" />
@@ -12,6 +11,7 @@
         <SolidColorBrush x:Key="TextBrush" Color="#1F2328" />
         <SolidColorBrush x:Key="MutedTextBrush" Color="#5D6673" />
         <SolidColorBrush x:Key="AccentBrush" Color="#0A65CC" />
+        <SolidColorBrush x:Key="AccentSoftBrush" Color="#E7F1FF" />
     </Window.Resources>
     <DockPanel>
         <!-- Toolbar -->
@@ -23,7 +23,7 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Border Background="#101828" CornerRadius="8" Width="32" Height="32" Margin="0,0,10,0">
+                    <Border Background="{StaticResource AccentSoftBrush}" CornerRadius="8" Width="32" Height="32" Margin="0,0,10,0">
                         <ui:SymbolIcon Symbol="DocumentText20" Foreground="#6CB6FF" FontSize="18"
                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>

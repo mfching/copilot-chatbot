@@ -1,0 +1,169 @@
+<Window x:Class="CopilotChatbot.SessionSystemPromptWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="Session System Prompt" Height="520" Width="660"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResizeWithGrip"
+        Background="{DynamicResource PageBrush}">
+    <DockPanel>
+
+        <!-- Title bar -->
+        <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource BorderBrushModern}" BorderThickness="0,0,0,1" Padding="18,12">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <ui:SymbolIcon Symbol="NotepadPerson24" FontSize="22"
+                               Foreground="{DynamicResource AccentBrush}" Margin="0,0,10,0" />
+                <StackPanel>
+                    <TextBlock Text="Session System Prompt" FontSize="15" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}" />
+                    <TextBlock x:Name="SubtitleText" FontSize="11"
+                               Foreground="{DynamicResource MutedTextBrush}" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Footer -->
+        <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource BorderBrushModern}" BorderThickness="0,1,0,0" Padding="16,10">
+            <Grid>
+                <!-- Left: Browse + Clear -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                    <Button x:Name="BrowseButton" Click="Browse_Click" Margin="0,0,8,0">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Chr" Background="{DynamicResource ControlBrush}"
+                                        BorderBrush="{DynamicResource BorderBrushModern}" BorderThickness="1" CornerRadius="8">
+                                    <StackPanel Orientation="Horizontal" Margin="13,7">
+                                        <ui:SymbolIcon Symbol="FolderOpen20" FontSize="15"
+                                                       Foreground="{DynamicResource TextBrush}" Margin="0,0,6,0" />
+                                        <TextBlock Text="Browse…" FontWeight="SemiBold" FontSize="13"
+                                                   Foreground="{DynamicResource TextBrush}" />
+                                    </StackPanel>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Chr" Property="Background" Value="{DynamicResource SurfaceBrush}" />
+                                        <Setter TargetName="Chr" Property="BorderBrush" Value="#9BA4AE" />
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="Chr" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                    <Button x:Name="ClearButton" Click="Clear_Click">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Chr" Background="{DynamicResource ControlBrush}"
+                                        BorderBrush="{DynamicResource BorderBrushModern}" BorderThickness="1" CornerRadius="8">
+                                    <StackPanel Orientation="Horizontal" Margin="13,7">
+                                        <ui:SymbolIcon Symbol="Delete20" FontSize="15"
+                                                       Foreground="{DynamicResource TextBrush}" Margin="0,0,6,0" />
+                                        <TextBlock Text="Clear" FontWeight="SemiBold" FontSize="13"
+                                                   Foreground="{DynamicResource TextBrush}" />
+                                    </StackPanel>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Chr" Property="Background" Value="{DynamicResource SurfaceBrush}" />
+                                        <Setter TargetName="Chr" Property="BorderBrush" Value="#9BA4AE" />
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="Chr" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </StackPanel>
+
+                <!-- Right: Apply -->
+                <Button x:Name="ApplyButton" HorizontalAlignment="Right" Click="Apply_Click">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Chr" Background="{DynamicResource AccentBrush}"
+                                    BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1" CornerRadius="8">
+                                <StackPanel Orientation="Horizontal" Margin="16,7">
+                                    <ui:SymbolIcon Symbol="Checkmark20" FontSize="15" Foreground="White" Margin="0,0,6,0" />
+                                    <TextBlock Text="Apply" FontWeight="SemiBold" FontSize="13" Foreground="White" />
+                                </StackPanel>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Chr" Property="Background" Value="#0856B3" />
+                                    <Setter TargetName="Chr" Property="BorderBrush" Value="#0856B3" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Chr" Property="Background" Value="#0648A0" />
+                                    <Setter TargetName="Chr" Property="BorderBrush" Value="#0648A0" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- Body -->
+        <DockPanel Margin="18,14,18,12">
+            <!-- Info bar -->
+            <Border DockPanel.Dock="Top" Background="{DynamicResource AccentSoftBrush}"
+                    BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1" CornerRadius="7"
+                    Padding="12,8" Margin="0,0,0,12">
+                <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="Info16" FontSize="13" Foreground="{DynamicResource AccentBrush}"
+                                   Margin="0,0,7,0" VerticalAlignment="Center" />
+                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource AccentBrush}"
+                               VerticalAlignment="Center">
+                        This overrides the global default for this tab only. Changes take effect when the next Copilot session starts (clear chat or open a new tab).
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+
+            <TextBlock DockPanel.Dock="Top" Text="System prompt for this session"
+                       FontWeight="SemiBold" FontSize="13"
+                       Foreground="{DynamicResource TextBrush}" Margin="0,0,0,8" />
+
+            <!-- Prompt editor -->
+            <TextBox x:Name="PromptTextBox"
+                     AcceptsReturn="True" AcceptsTab="True"
+                     TextWrapping="Wrap"
+                     VerticalScrollBarVisibility="Auto"
+                     FontSize="13"
+                     FontFamily="Consolas, Cascadia Code, Segoe UI"
+                     Background="{DynamicResource PanelBrush}"
+                     Foreground="{DynamicResource TextBrush}"
+                     BorderBrush="{DynamicResource BorderBrushModern}"
+                     CaretBrush="{DynamicResource TextBrush}"
+                     SelectionBrush="{DynamicResource AccentBrush}"
+                     Padding="10"
+                     BorderThickness="1">
+                <TextBox.Template>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="Chr"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="7">
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Focusable="False"
+                                          HorizontalScrollBarVisibility="Disabled"
+                                          VerticalScrollBarVisibility="Auto"
+                                          Padding="{TemplateBinding Padding}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chr" Property="BorderBrush" Value="#9BA4AE" />
+                            </Trigger>
+                            <Trigger Property="IsFocused" Value="True">
+                                <Setter TargetName="Chr" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </TextBox.Template>
+            </TextBox>
+        </DockPanel>
+
+    </DockPanel>
+</Window>

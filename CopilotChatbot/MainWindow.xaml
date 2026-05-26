@@ -410,6 +410,11 @@
                         <ui:SymbolIcon Symbol="Delete20" FontSize="18"
                                        Foreground="{DynamicResource TextBrush}" />
                     </Button>
+                    <Button x:Name="SessionPromptButton" Style="{StaticResource IconButton}"
+                            ToolTip="Edit session system prompt" Click="SessionPromptButton_Click">
+                        <ui:SymbolIcon Symbol="NotepadPerson20" FontSize="18"
+                                       Foreground="{DynamicResource TextBrush}" />
+                    </Button>
                     <Button x:Name="RefreshModelsButton" Style="{StaticResource IconButton}"
                             ToolTip="Refresh models" Click="RefreshModelsButton_Click">
                         <ui:SymbolIcon Symbol="ArrowClockwise20" FontSize="18"
@@ -459,72 +464,8 @@
         </StatusBar>
 
         <Grid Background="{DynamicResource PageBrush}">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
             <TabControl x:Name="ChatTabs" Margin="6,8,6,8" TabStripPlacement="Left"
                         SelectionChanged="ChatTabs_SelectionChanged" />
-            <!-- Copilot activity status bar (between chat history and input) -->
-            <Border x:Name="CopilotStatusBar" Grid.Row="1"
-                    Margin="8,0,8,3" Padding="10,5"
-                    Background="Transparent"
-                    Visibility="Collapsed">
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Ellipse x:Name="StatusDot" Width="6" Height="6"
-                             Fill="{DynamicResource AccentBrush}"
-                             VerticalAlignment="Center" Margin="0,0,7,0" />
-                    <TextBlock x:Name="CopilotStatusText"
-                               Foreground="{DynamicResource MutedTextBrush}"
-                               FontSize="11" FontStyle="Italic" VerticalAlignment="Center" />
-                </StackPanel>
-            </Border>
-            <Border Grid.Row="2" Margin="6,0,6,8" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrushModern}" BorderThickness="1" CornerRadius="12" Padding="10">
-                <Border.Effect>
-                    <DropShadowEffect BlurRadius="18" ShadowDepth="1" Opacity="0.10" />
-                </Border.Effect>
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <!-- TextBox + beam overlay in same Grid cell -->
-                    <Grid>
-                        <!-- TextBox: always visible -->
-                        <TextBox x:Name="PromptTextBox" MinHeight="88" MaxHeight="180" AcceptsReturn="True" TextWrapping="Wrap"
-                                 VerticalScrollBarVisibility="Auto"
-                                 Style="{StaticResource PromptTextBoxStyle}"
-                                 KeyDown="PromptTextBox_KeyDown" />
-                        <!-- Beam overlay: StrokeDashOffset travels at even speed around the border -->
-                        <Rectangle x:Name="PromptBeam"
-                                   HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                                   Fill="Transparent" StrokeThickness="2"
-                                   RadiusX="8" RadiusY="8" StrokeDashCap="Round"
-                                   IsHitTestVisible="False" Visibility="Collapsed">
-                            <Rectangle.Stroke>
-                                <SolidColorBrush x:Name="BeamStrokeBrush" Color="#FFFF4545" />
-                            </Rectangle.Stroke>
-                            <Rectangle.Effect>
-                                <BlurEffect Radius="3" />
-                            </Rectangle.Effect>
-                        </Rectangle>
-                    </Grid>
-                    <Button x:Name="SendButton" Grid.Column="1" Width="104" Margin="10,0,0,0"
-                            VerticalAlignment="Stretch" Style="{StaticResource SendButtonStyle}" Click="SendButton_Click">
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                            <ui:SymbolIcon Symbol="Send20" FontSize="17" Margin="0,0,6,0" />
-                            <TextBlock Text="Send" />
-                        </StackPanel>
-                    </Button>
-                    <Button x:Name="StopButton" Grid.Column="2" Width="92" Margin="10,0,0,0"
-                            VerticalAlignment="Stretch" Style="{StaticResource StopButtonStyle}"
-                            Click="StopButton_Click" IsEnabled="False" Visibility="Collapsed">
-                        <TextBlock Text="Stop" />
-                    </Button>
-                </Grid>
-            </Border>
         </Grid>
     </DockPanel>
 </Window>
