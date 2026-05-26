@@ -20,6 +20,54 @@ public partial class ChatTabContent : UserControl
     private Storyboard? _beamStoryboard;
     private Storyboard? _dotStoryboard;
 
+    private const string PreviousQuestionScript = """
+        (function() {
+            var users = Array.from(document.querySelectorAll('article.msg.user'));
+            if (!users.length) return;
+
+            var y = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+            var positions = users.map(function(el) {
+                return { el: el, top: el.getBoundingClientRect().top + y };
+            });
+
+            var target = positions[0];
+            for (var i = positions.length - 1; i >= 0; i--) {
+                if (positions[i].top < y - 8) {
+                    target = positions[i];
+                    break;
+                }
+            }
+
+            var details = target.el.querySelector('details');
+            if (details) details.open = true;
+            window.scrollTo({ top: Math.max(0, target.top - 8), behavior: 'smooth' });
+        })()
+        """;
+
+    private const string NextQuestionScript = """
+        (function() {
+            var users = Array.from(document.querySelectorAll('article.msg.user'));
+            if (!users.length) return;
+
+            var y = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+            var positions = users.map(function(el) {
+                return { el: el, top: el.getBoundingClientRect().top + y };
+            });
+
+            var target = positions[positions.length - 1];
+            for (var i = 0; i < positions.length; i++) {
+                if (positions[i].top > y + 8) {
+                    target = positions[i];
+                    break;
+                }
+            }
+
+            var details = target.el.querySelector('details');
+            if (details) details.open = true;
+            window.scrollTo({ top: Math.max(0, target.top - 8), behavior: 'smooth' });
+        })()
+        """;
+
     public ChatTabContent()
     {
         InitializeComponent();
@@ -99,6 +147,18 @@ public partial class ChatTabContent : UserControl
     {
         if (BrowserHost.Content is WebView2 { CoreWebView2: not null } browser)
             _ = browser.ExecuteScriptAsync("window.scrollTo(0, document.documentElement.scrollHeight)");
+    }
+
+    private void PreviousQuestion_Click(object sender, RoutedEventArgs e)
+    {
+        if (BrowserHost.Content is WebView2 { CoreWebView2: not null } browser)
+            _ = browser.ExecuteScriptAsync(PreviousQuestionScript);
+    }
+
+    private void NextQuestion_Click(object sender, RoutedEventArgs e)
+    {
+        if (BrowserHost.Content is WebView2 { CoreWebView2: not null } browser)
+            _ = browser.ExecuteScriptAsync(NextQuestionScript);
     }
 
     private void ScrollToTop_Click(object sender, RoutedEventArgs e)

@@ -181,8 +181,97 @@
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
                     </Button.Template>
-                    <ui:SymbolIcon Symbol="ArrowDown20" FontSize="12"
-                                   Foreground="{DynamicResource MutedTextBrush}" />
+                    <Viewbox Width="14" Height="14" Stretch="Uniform">
+                        <Grid Width="14" Height="14">
+                            <Path Data="M 3.5 10.5 L 10.5 10.5"
+                                  Stroke="{DynamicResource MutedTextBrush}"
+                                  StrokeThickness="1.8"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round" />
+                            <Path Data="M 4 5.5 L 7 8.5 L 10 5.5"
+                                  Stroke="{DynamicResource MutedTextBrush}"
+                                  StrokeThickness="1.8"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round" />
+                        </Grid>
+                    </Viewbox>
+                </Button>
+
+                <!-- Next user question button -->
+                <Button x:Name="NextQuestionBtn" DockPanel.Dock="Right"
+                        Width="24" Height="24" Margin="0,0,6,0" Cursor="Hand"
+                        ToolTip="Next question"
+                        Click="NextQuestion_Click">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Chr"
+                                    Background="{DynamicResource SurfaceBrush}"
+                                    BorderBrush="{DynamicResource BorderBrushModern}"
+                                    BorderThickness="1" CornerRadius="12">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="6" ShadowDepth="0" Opacity="0.15" />
+                                </Border.Effect>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Chr" Property="Background" Value="{DynamicResource ControlBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Chr" Property="Background" Value="{DynamicResource BorderBrushModern}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Viewbox Width="14" Height="14" Stretch="Uniform">
+                        <Grid Width="14" Height="14">
+                            <Path Data="M 4 5.5 L 7 8.5 L 10 5.5"
+                                  Stroke="{DynamicResource MutedTextBrush}"
+                                  StrokeThickness="1.8"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round" />
+                        </Grid>
+                    </Viewbox>
+                </Button>
+
+                <!-- Previous user question button -->
+                <Button x:Name="PreviousQuestionBtn" DockPanel.Dock="Right"
+                        Width="24" Height="24" Margin="0,0,6,0" Cursor="Hand"
+                        ToolTip="Previous question"
+                        Click="PreviousQuestion_Click">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Chr"
+                                    Background="{DynamicResource SurfaceBrush}"
+                                    BorderBrush="{DynamicResource BorderBrushModern}"
+                                    BorderThickness="1" CornerRadius="12">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="6" ShadowDepth="0" Opacity="0.15" />
+                                </Border.Effect>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Chr" Property="Background" Value="{DynamicResource ControlBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Chr" Property="Background" Value="{DynamicResource BorderBrushModern}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Viewbox Width="14" Height="14" Stretch="Uniform">
+                        <Grid Width="14" Height="14">
+                            <Path Data="M 4 8.5 L 7 5.5 L 10 8.5"
+                                  Stroke="{DynamicResource MutedTextBrush}"
+                                  StrokeThickness="1.8"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round" />
+                        </Grid>
+                    </Viewbox>
                 </Button>
 
                 <!-- Scroll-to-top button (left of scroll-to-bottom) -->
@@ -211,8 +300,21 @@
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
                     </Button.Template>
-                    <ui:SymbolIcon Symbol="ArrowUp20" FontSize="12"
-                                   Foreground="{DynamicResource MutedTextBrush}" />
+                    <Viewbox Width="14" Height="14" Stretch="Uniform">
+                        <Grid Width="14" Height="14">
+                            <Path Data="M 3.5 3.5 L 10.5 3.5"
+                                  Stroke="{DynamicResource MutedTextBrush}"
+                                  StrokeThickness="1.8"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round" />
+                            <Path Data="M 4 8.5 L 7 5.5 L 10 8.5"
+                                  Stroke="{DynamicResource MutedTextBrush}"
+                                  StrokeThickness="1.8"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round" />
+                        </Grid>
+                    </Viewbox>
                 </Button>
 
                 <!-- Status indicator (left, fills remaining space) -->
