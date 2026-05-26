@@ -1,12 +1,24 @@
 name: .NET Build
+run-name: .NET Build v${{ vars.VERSION_PREFIX || '1.0' }}.${{ github.run_number }}
 
 on:
   push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
   workflow_dispatch:
+
+env:
+  VERSION_PREFIX: ${{ vars.VERSION_PREFIX || '1.0' }}
+  BUILD_NUMBER: ${{ github.run_number }}
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
       - name: Checkout repository
@@ -15,10 +27,25 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.x'
+          dotnet-version: '9.x'
+
+      - name: Set build version
+        shell: pwsh
+        run: |
+          $version = "${{ env.VERSION_PREFIX }}.${{ env.BUILD_NUMBER }}"
+          "BUILD_VERSION=$version" >> $env:GITHUB_ENV
+          "Assembly version: $version"
 
       - name: Restore dependencies
         run: dotnet restore CopilotChatbot.sln
 
       - name: Build
-        run: dotnet build CopilotChatbot.sln --no-restore --configuration Release
+        shell: pwsh
+        run: |
+          dotnet build CopilotChatbot.sln `
+            --no-restore `
+            --configuration Release `
+            /p:Version=$env:BUILD_VERSION `
+            /p:AssemblyVersion=$env:BUILD_VERSION `
+            /p:FileVersion=$env:BUILD_VERSION `
+            /p:InformationalVersion="$env:BUILD_VERSION+${{ github.sha }}"
