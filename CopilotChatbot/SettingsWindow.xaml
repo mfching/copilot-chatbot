@@ -481,9 +481,17 @@
                         <!-- Saved prompt approvals -->
                         <DockPanel>
                             <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
                                 <TextBlock Text="Saved Prompt Approvals" FontWeight="SemiBold"
                                            FontSize="13" Foreground="{DynamicResource TextBrush}" />
-                                <Button Content="Remove" HorizontalAlignment="Right"
+                                <Button Content="Clear" Grid.Column="1" HorizontalAlignment="Right"
+                                        Style="{StaticResource SmallButton}" Width="64" Margin="0,0,6,0"
+                                        Click="ClearSavedRules_Click" />
+                                <Button Content="Remove" Grid.Column="2" HorizontalAlignment="Right"
                                         Style="{StaticResource SmallButton}" Width="72"
                                         Click="RemoveSavedRule_Click" />
                             </Grid>
@@ -553,10 +561,13 @@
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <TextBox x:Name="ToolBox" Margin="0,0,8,0" />
                                 <Button Content="Add" Grid.Column="1" Style="{StaticResource SmallButton}"
-                                        Width="54" Click="AddTool_Click" />
+                                        Width="54" Margin="0,0,6,0" Click="AddTool_Click" />
+                                <Button Content="Clear" Grid.Column="2" Style="{StaticResource SmallButton}"
+                                        Width="64" Click="ClearTools_Click" />
                             </Grid>
                         </Border>
                         <Border Style="{StaticResource CardBorder}" Padding="0">
@@ -581,10 +592,13 @@
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <TextBox x:Name="HostBox" Margin="0,0,8,0" />
                                 <Button Content="Add" Grid.Column="1" Style="{StaticResource SmallButton}"
-                                        Width="54" Click="AddHost_Click" />
+                                        Width="54" Margin="0,0,6,0" Click="AddHost_Click" />
+                                <Button Content="Clear" Grid.Column="2" Style="{StaticResource SmallButton}"
+                                        Width="64" Click="ClearHosts_Click" />
                             </Grid>
                         </Border>
                         <Border Style="{StaticResource CardBorder}" Padding="0">

@@ -55,7 +55,11 @@ public sealed class LocalShortcutService : ILocalShortcutService
         new(
             "/memory",
             "Show or change long-term memory permission.",
-            ExecuteMemoryShortcutAsync)
+            ExecuteMemoryShortcutAsync),
+        new(
+            "/plan",
+            "Ask Copilot to create an implementation plan before coding.",
+            ExecutePlanShortcutAsync)
     ];
 
     private static bool TryCreateInvocation(ChatSessionView chat, string prompt, out LocalShortcutInvocation invocation)
@@ -210,6 +214,33 @@ public sealed class LocalShortcutService : ILocalShortcutService
             FormatMemoryStatus(enabled, changed: true)));
     }
 
+    private Task<LocalShortcutResult> ExecutePlanShortcutAsync(LocalShortcutInvocation invocation)
+    {
+        var task = string.IsNullOrWhiteSpace(invocation.ArgumentText)
+            ? "the implementation request from the current conversation context"
+            : invocation.ArgumentText.Trim();
+
+        var prompt = $"""
+Create an implementation plan before coding.
+
+Task:
+{task}
+
+Instructions:
+- Inspect the relevant project context first if needed.
+- Identify the concrete files, services, UI surfaces, and data flows likely to change.
+- Present a concise implementation plan before making code changes.
+- Include any assumptions, risks, or open questions that could affect the implementation.
+- Do not start coding until the plan is clear.
+""";
+
+        var visiblePrompt = string.IsNullOrWhiteSpace(invocation.ArgumentText)
+            ? "/plan"
+            : "/plan " + invocation.ArgumentText.Trim();
+
+        return Task.FromResult(LocalShortcutResult.ForPrompt(prompt, visiblePrompt));
+    }
+
     private static string FormatMemoryStatus(bool enabled, bool changed)
     {
         var lines = new List<string>
@@ -361,4 +392,12 @@ public sealed class LocalShortcutService : ILocalShortcutService
         IReadOnlyList<string> Arguments);
 }
 
-public sealed record LocalShortcutResult(ChatMessageKind Kind, string Content);
+public sealed record LocalShortcutResult(
+    ChatMessageKind Kind,
+    string Content,
+    string? PromptToSend = null,
+    string? UserVisiblePrompt = null)
+{
+    public static LocalShortcutResult ForPrompt(string promptToSend, string userVisiblePrompt) =>
+        new(ChatMessageKind.User, "", promptToSend, userVisiblePrompt);
+}

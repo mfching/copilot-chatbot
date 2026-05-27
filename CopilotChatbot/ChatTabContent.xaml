@@ -317,6 +317,94 @@
                     </Viewbox>
                 </Button>
 
+                <!-- Expand all message articles -->
+                <Button x:Name="ExpandAllBtn" DockPanel.Dock="Right"
+                        Width="24" Height="24" Margin="0,0,6,0" Cursor="Hand"
+                        ToolTip="Expand all"
+                        Click="ExpandAll_Click">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Chr"
+                                    Background="{DynamicResource SurfaceBrush}"
+                                    BorderBrush="{DynamicResource BorderBrushModern}"
+                                    BorderThickness="1" CornerRadius="12">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="6" ShadowDepth="0" Opacity="0.15" />
+                                </Border.Effect>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Chr" Property="Background" Value="{DynamicResource ControlBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Chr" Property="Background" Value="{DynamicResource BorderBrushModern}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Viewbox Width="14" Height="14" Stretch="Uniform">
+                        <Grid Width="14" Height="14">
+                            <Path Data="M 4 5.5 L 7 2.5 L 10 5.5"
+                                  Stroke="{DynamicResource MutedTextBrush}"
+                                  StrokeThickness="1.8"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round" />
+                            <Path Data="M 4 8.5 L 7 11.5 L 10 8.5"
+                                  Stroke="{DynamicResource MutedTextBrush}"
+                                  StrokeThickness="1.8"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round" />
+                        </Grid>
+                    </Viewbox>
+                </Button>
+
+                <!-- Collapse all message articles -->
+                <Button x:Name="CollapseAllBtn" DockPanel.Dock="Right"
+                        Width="24" Height="24" Margin="0,0,6,0" Cursor="Hand"
+                        ToolTip="Collapse all"
+                        Click="CollapseAll_Click">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Chr"
+                                    Background="{DynamicResource SurfaceBrush}"
+                                    BorderBrush="{DynamicResource BorderBrushModern}"
+                                    BorderThickness="1" CornerRadius="12">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="6" ShadowDepth="0" Opacity="0.15" />
+                                </Border.Effect>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Chr" Property="Background" Value="{DynamicResource ControlBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Chr" Property="Background" Value="{DynamicResource BorderBrushModern}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Viewbox Width="14" Height="14" Stretch="Uniform">
+                        <Grid Width="14" Height="14">
+                            <Path Data="M 4 2.5 L 7 5 L 10 2.5"
+                                  Stroke="{DynamicResource MutedTextBrush}"
+                                  StrokeThickness="1.8"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round" />
+                            <Path Data="M 4 11.5 L 7 9 L 10 11.5"
+                                  Stroke="{DynamicResource MutedTextBrush}"
+                                  StrokeThickness="1.8"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round" />
+                        </Grid>
+                    </Viewbox>
+                </Button>
+
                 <!-- Status indicator (left, fills remaining space) -->
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <Ellipse x:Name="ActivityDot" Width="6" Height="6"
@@ -331,7 +419,39 @@
         </Border>
 
         <!-- ── Browser host (fills remaining space) ────────────────────────── -->
-        <ContentControl x:Name="BrowserHost" />
+        <Grid>
+            <ContentControl x:Name="BrowserHost" />
+
+            <Grid x:Name="LoadingOverlay"
+                  Background="{DynamicResource PageBrush}"
+                  Visibility="Collapsed"
+                  Panel.ZIndex="5">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Grid Width="34" Height="34" HorizontalAlignment="Center" Margin="0,0,0,12">
+                        <Ellipse Stroke="{DynamicResource BorderBrushModern}"
+                                 StrokeThickness="3"
+                                 Opacity="0.45" />
+                        <Path x:Name="LoadingSpinner"
+                              Data="M 17 2 A 15 15 0 0 1 32 17"
+                              Stroke="{DynamicResource AccentBrush}"
+                              StrokeThickness="3"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round"
+                              RenderTransformOrigin="0.5,0.5">
+                            <Path.RenderTransform>
+                                <RotateTransform Angle="0" />
+                            </Path.RenderTransform>
+                        </Path>
+                    </Grid>
+                    <TextBlock x:Name="LoadingText"
+                               Text="Loading chat history..."
+                               Foreground="{DynamicResource MutedTextBrush}"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               HorizontalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+        </Grid>
 
     </DockPanel>
 </UserControl>

@@ -19,6 +19,7 @@ public partial class ChatTabContent : UserControl
 
     private Storyboard? _beamStoryboard;
     private Storyboard? _dotStoryboard;
+    private Storyboard? _loadingStoryboard;
 
     private const string PreviousQuestionScript = """
         (function() {
@@ -68,6 +69,22 @@ public partial class ChatTabContent : UserControl
         })()
         """;
 
+    private const string ExpandAllArticlesScript = """
+        (function() {
+            document.querySelectorAll('article.msg details').forEach(function(details) {
+                details.open = true;
+            });
+        })()
+        """;
+
+    private const string CollapseAllArticlesScript = """
+        (function() {
+            document.querySelectorAll('article.msg details').forEach(function(details) {
+                details.open = false;
+            });
+        })()
+        """;
+
     public ChatTabContent()
     {
         InitializeComponent();
@@ -77,6 +94,14 @@ public partial class ChatTabContent : UserControl
 
     /// <summary>Places the session's WebView2 into this tab's content area.</summary>
     public void SetBrowser(WebView2 browser) => BrowserHost.Content = browser;
+
+    /// <summary>Shows or hides the centered loading overlay while restored chat history is prepared.</summary>
+    public void SetLoading(bool isLoading, string? text = null)
+    {
+        LoadingText.Text = string.IsNullOrWhiteSpace(text) ? "Loading chat history..." : text;
+        LoadingOverlay.Visibility = isLoading ? Visibility.Visible : Visibility.Collapsed;
+        if (isLoading) StartLoadingAnimation(); else StopLoadingAnimation();
+    }
 
     /// <summary>Updates Send/Stop/Beam state based on whether the session is thinking
     /// and whether the session is healthy enough to accept input.</summary>
@@ -122,6 +147,7 @@ public partial class ChatTabContent : UserControl
     {
         StopBeamAnimation();
         StopDotAnimation();
+        StopLoadingAnimation();
     }
 
     // ── Event handlers ────────────────────────────────────────────────────────
@@ -165,6 +191,18 @@ public partial class ChatTabContent : UserControl
     {
         if (BrowserHost.Content is WebView2 { CoreWebView2: not null } browser)
             _ = browser.ExecuteScriptAsync("window.scrollTo(0, 0)");
+    }
+
+    private void ExpandAll_Click(object sender, RoutedEventArgs e)
+    {
+        if (BrowserHost.Content is WebView2 { CoreWebView2: not null } browser)
+            _ = browser.ExecuteScriptAsync(ExpandAllArticlesScript);
+    }
+
+    private void CollapseAll_Click(object sender, RoutedEventArgs e)
+    {
+        if (BrowserHost.Content is WebView2 { CoreWebView2: not null } browser)
+            _ = browser.ExecuteScriptAsync(CollapseAllArticlesScript);
     }
 
     private void TryRaiseSend()
@@ -250,5 +288,28 @@ public partial class ChatTabContent : UserControl
     {
         _dotStoryboard?.Stop();
         _dotStoryboard = null;
+    }
+
+    private void StartLoadingAnimation()
+    {
+        if (_loadingStoryboard != null) return;
+        _loadingStoryboard = new Storyboard();
+        var anim = new DoubleAnimation
+        {
+            From = 0,
+            To = 360,
+            Duration = new Duration(TimeSpan.FromSeconds(0.9)),
+            RepeatBehavior = RepeatBehavior.Forever
+        };
+        Storyboard.SetTarget(anim, LoadingSpinner);
+        Storyboard.SetTargetProperty(anim, new PropertyPath("(UIElement.RenderTransform).(RotateTransform.Angle)"));
+        _loadingStoryboard.Children.Add(anim);
+        _loadingStoryboard.Begin(this);
+    }
+
+    private void StopLoadingAnimation()
+    {
+        _loadingStoryboard?.Stop();
+        _loadingStoryboard = null;
     }
 }

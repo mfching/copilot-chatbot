@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using CopilotChatbot.Models;
 using GitHub.Copilot.SDK;
+using System.Management.Automation.Language;
 
 namespace CopilotChatbot.Services;
 
@@ -184,7 +185,7 @@ public sealed class CopilotChatService : IAsyncDisposable
             McpServers = _mcpServerConfigs.Count > 0 ? _mcpServerConfigs : null,
             SkillDirectories = GetEffectiveSkillDirectories(settings),
             CustomAgents = customAgents,
-            OnPermissionRequest = async (request, _) => await EvaluatePermissionAsync(request, settings),
+            OnPermissionRequest = async (request, _) => await EvaluatePermissionAsync(request, _settingsStore.Load()),
             OnUserInputRequest = async (request, _) =>
             {
                 try { return await EvaluateUserInputAsync(chat, request); }
@@ -423,7 +424,7 @@ public sealed class CopilotChatService : IAsyncDisposable
             McpServers = _mcpServerConfigs.Count > 0 ? _mcpServerConfigs : null,
             SkillDirectories = GetEffectiveSkillDirectories(settings),
             CustomAgents = customAgents,
-            OnPermissionRequest = async (request, _) => await EvaluatePermissionAsync(request, settings),
+            OnPermissionRequest = async (request, _) => await EvaluatePermissionAsync(request, _settingsStore.Load()),
             OnUserInputRequest = async (request, _) =>
             {
                 try { return await EvaluateUserInputAsync(chat, request); }
@@ -487,7 +488,6 @@ public sealed class CopilotChatService : IAsyncDisposable
     private async Task<PermissionRequestResult> EvaluatePermissionAsync(PermissionRequest request, AppSettings settings)
     {
         var prompt = ToPermissionPrompt(request);
-        var key = BuildPermissionKey(prompt);
 
         if (prompt.Kind.Equals("memory", StringComparison.OrdinalIgnoreCase) &&
             !settings.Permissions.AllowMemoryByDefault)
@@ -495,6 +495,19 @@ public sealed class CopilotChatService : IAsyncDisposable
             _logger.Log("PERMISSION-AUTO", "Kind=memory | rejected because memory is disabled");
             return new PermissionRequestResult { Kind = PermissionRequestResultKind.Rejected };
         }
+
+        if (TryCreatePromptForMissingCommands(prompt, settings, out var missingCommandPrompt))
+        {
+            if (missingCommandPrompt.Commands.Count == 0)
+            {
+                _logger.Log("PERMISSION-AUTO", $"Kind={prompt.Kind} Tool={prompt.ToolName} File={prompt.FileName} Host={prompt.Host} Commands={FormatCommandIdentifiers(prompt.Commands)} | auto-approved by command whitelist");
+                return new PermissionRequestResult { Kind = PermissionRequestResultKind.Approved };
+            }
+
+            prompt = missingCommandPrompt;
+        }
+
+        var key = BuildPermissionKey(prompt);
 
         if (IsAllowedBySettings(prompt, settings) || IsAllowedForSession(prompt) || _sessionPermissionApprovals.ContainsKey(key))
         {
@@ -557,15 +570,14 @@ public sealed class CopilotChatService : IAsyncDisposable
             return true;
 
         // MCP and custom tools may be allowed globally via settings
-        if (kind.Equals("mcp", StringComparison.OrdinalIgnoreCase) && settings.Permissions.AllowMcpByDefault)
+        if (IsMcpPermissionKind(kind) && settings.Permissions.AllowMcpByDefault)
             return true;
-        if (kind.Equals("custom_tool", StringComparison.OrdinalIgnoreCase) && settings.Permissions.AllowCustomToolsByDefault)
+        if (IsCustomToolPermissionKind(kind) && settings.Permissions.AllowCustomToolsByDefault)
             return true;
         if (kind.Equals("memory", StringComparison.OrdinalIgnoreCase) && settings.Permissions.AllowMemoryByDefault)
             return true;
 
-        if ((kind.Equals("custom_tool", StringComparison.OrdinalIgnoreCase) ||
-             kind.Equals("mcp", StringComparison.OrdinalIgnoreCase)) &&
+        if ((IsCustomToolPermissionKind(kind) || IsMcpPermissionKind(kind)) &&
             settings.Permissions.AllowedTools.Contains(tool, StringComparer.OrdinalIgnoreCase))
         {
             return true;
@@ -599,6 +611,33 @@ public sealed class CopilotChatService : IAsyncDisposable
         return false;
     }
 
+    private bool TryCreatePromptForMissingCommands(PermissionPrompt prompt, AppSettings settings, out PermissionPrompt missingPrompt)
+    {
+        missingPrompt = prompt;
+        if (prompt.Commands.Count == 0)
+            return false;
+
+        var missingCommands = prompt.Commands
+            .Where(command => !IsCommandAllowed(command, prompt, settings))
+            .ToArray();
+
+        missingPrompt = prompt with { Commands = missingCommands };
+        return true;
+    }
+
+    private bool IsCommandAllowed(ShellCommandPermission command, PermissionPrompt prompt, AppSettings settings)
+    {
+        var singleCommandPrompt = prompt with
+        {
+            Command = null,
+            Commands = [command]
+        };
+
+        return IsAllowedBySettings(singleCommandPrompt, settings) ||
+               IsAllowedForSession(singleCommandPrompt) ||
+               _sessionPermissionApprovals.ContainsKey(BuildPermissionKey(singleCommandPrompt));
+    }
+
     private static PermissionPrompt ToPermissionPrompt(PermissionRequest request)
     {
         var url = GetString(request, "Url");
@@ -629,8 +668,8 @@ public sealed class CopilotChatService : IAsyncDisposable
             return;
         }
 
-        if ((prompt.Kind.Equals("custom_tool", StringComparison.OrdinalIgnoreCase) ||
-             prompt.Kind.Equals("mcp", StringComparison.OrdinalIgnoreCase)) &&
+        if ((IsCustomToolPermissionKind(prompt.Kind) ||
+             IsMcpPermissionKind(prompt.Kind)) &&
             AddUnique(settings.Permissions.AllowedTools, prompt.ToolName))
         {
             return;
@@ -747,6 +786,14 @@ public sealed class CopilotChatService : IAsyncDisposable
         => string.IsNullOrWhiteSpace(ruleValue) ||
            ruleValue.Equals(requestedValue, StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsMcpPermissionKind(string kind)
+        => kind.Equals("mcp", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsCustomToolPermissionKind(string kind)
+        => kind.Equals("custom-tool", StringComparison.OrdinalIgnoreCase) ||
+           kind.Equals("custom_tool", StringComparison.OrdinalIgnoreCase) ||
+           kind.Equals("customtool", StringComparison.OrdinalIgnoreCase);
+
     private static bool CommandIdentifiersMatch(string ruleValue, IEnumerable<string> requestedValues)
     {
         var requested = requestedValues
@@ -821,12 +868,211 @@ public sealed class CopilotChatService : IAsyncDisposable
         if (request is not PermissionRequestShell shell)
             return [];
 
-        return shell.Commands
+        var commands = shell.Commands
             .Where(command => !string.IsNullOrWhiteSpace(command.Identifier))
             .Select(command => new ShellCommandPermission(command.Identifier, command.ReadOnly))
             .DistinctBy(command => NormalizeCommandIdentifier(command.Identifier))
             .ToArray();
+
+        var powerShellCommands = GetPowerShellCommandIdentifiers(shell, commands);
+        if (powerShellCommands.Count > 0)
+            return powerShellCommands;
+
+        return commands;
     }
+
+    private static IReadOnlyList<ShellCommandPermission> GetPowerShellCommandIdentifiers(
+        PermissionRequestShell shell,
+        IReadOnlyList<ShellCommandPermission> sdkCommands)
+    {
+        var fullCommandText = shell.FullCommandText ?? "";
+        var sdkHasPowerShellHost = sdkCommands.Any(command => IsPowerShellHostIdentifier(command.Identifier));
+        var script = TryExtractPowerShellScript(fullCommandText, sdkHasPowerShellHost);
+        if (string.IsNullOrWhiteSpace(script))
+            return [];
+
+        var defaultReadOnly = sdkCommands.Count > 0 &&
+                              sdkCommands.All(command => command.ReadOnly) &&
+                              !shell.HasWriteFileRedirection;
+
+        return ExtractPowerShellCommandIdentifiers(script)
+            .Where(identifier => !IsPowerShellHostIdentifier(identifier))
+            .Select(identifier => new ShellCommandPermission(
+                identifier,
+                !shell.HasWriteFileRedirection && (defaultReadOnly || IsKnownReadOnlyPowerShellCommand(identifier))))
+            .DistinctBy(command => NormalizeCommandIdentifier(command.Identifier))
+            .ToArray();
+    }
+
+    private static string? TryExtractPowerShellScript(string fullCommandText, bool sdkHasPowerShellHost)
+    {
+        if (string.IsNullOrWhiteSpace(fullCommandText))
+            return null;
+
+        var tokens = TokenizeCommandLine(fullCommandText);
+        if (tokens.Count == 0)
+            return null;
+
+        if (IsPowerShellHostIdentifier(tokens[0]))
+        {
+            for (var i = 1; i < tokens.Count; i++)
+            {
+                var token = tokens[i];
+                if (token.Equals("-Command", StringComparison.OrdinalIgnoreCase) ||
+                    token.Equals("-CommandWithArgs", StringComparison.OrdinalIgnoreCase) ||
+                    token.Equals("-c", StringComparison.OrdinalIgnoreCase) ||
+                    token.Equals("/c", StringComparison.OrdinalIgnoreCase))
+                {
+                    return i + 1 < tokens.Count
+                        ? string.Join(" ", tokens.Skip(i + 1))
+                        : null;
+                }
+            }
+
+            return null;
+        }
+
+        if (sdkHasPowerShellHost || LooksLikePowerShellCommand(fullCommandText))
+            return fullCommandText;
+
+        return null;
+    }
+
+    private static IReadOnlyList<string> ExtractPowerShellCommandIdentifiers(string script)
+    {
+        var ast = Parser.ParseInput(script, out _, out _);
+        return ast
+            .FindAll(node => node is CommandAst, searchNestedScriptBlocks: true)
+            .OfType<CommandAst>()
+            .Select(command => command.GetCommandName())
+            .Where(commandName => !string.IsNullOrWhiteSpace(commandName))
+            .Select(commandName => commandName!)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<string> TokenizeCommandLine(string commandLine)
+    {
+        var tokens = new List<string>();
+        var current = new System.Text.StringBuilder();
+        var quote = '\0';
+
+        foreach (var ch in commandLine)
+        {
+            if (quote != '\0')
+            {
+                if (ch == quote)
+                {
+                    quote = '\0';
+                }
+                else
+                {
+                    current.Append(ch);
+                }
+                continue;
+            }
+
+            if (ch is '\'' or '"')
+            {
+                quote = ch;
+                continue;
+            }
+
+            if (char.IsWhiteSpace(ch))
+            {
+                if (current.Length > 0)
+                {
+                    tokens.Add(current.ToString());
+                    current.Clear();
+                }
+                continue;
+            }
+
+            current.Append(ch);
+        }
+
+        if (current.Length > 0)
+            tokens.Add(current.ToString());
+
+        return tokens;
+    }
+
+    private static bool LooksLikePowerShellCommand(string value)
+        => ExtractPowerShellCommandIdentifiers(value)
+            .Any(identifier => identifier.Contains('-', StringComparison.Ordinal) &&
+                               IsKnownPowerShellVerb(identifier.Split('-', 2)[0]));
+
+    private static bool IsPowerShellHostIdentifier(string identifier)
+    {
+        if (string.IsNullOrWhiteSpace(identifier))
+            return false;
+
+        var fileName = identifier.Trim().Trim('"', '\'');
+        try
+        {
+            fileName = Path.GetFileNameWithoutExtension(fileName);
+        }
+        catch
+        {
+            fileName = fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                ? fileName[..^4]
+                : fileName;
+        }
+
+        return fileName.Equals("powershell", StringComparison.OrdinalIgnoreCase) ||
+               fileName.Equals("pwsh", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsKnownReadOnlyPowerShellCommand(string identifier)
+    {
+        var verb = identifier.Split('-', 2)[0];
+        return verb.Equals("Get", StringComparison.OrdinalIgnoreCase) ||
+               verb.Equals("Read", StringComparison.OrdinalIgnoreCase) ||
+               verb.Equals("ConvertFrom", StringComparison.OrdinalIgnoreCase) ||
+               verb.Equals("ConvertTo", StringComparison.OrdinalIgnoreCase) ||
+               verb.Equals("Select", StringComparison.OrdinalIgnoreCase) ||
+               verb.Equals("Where", StringComparison.OrdinalIgnoreCase) ||
+               verb.Equals("Sort", StringComparison.OrdinalIgnoreCase) ||
+               verb.Equals("Measure", StringComparison.OrdinalIgnoreCase) ||
+               verb.Equals("Format", StringComparison.OrdinalIgnoreCase) ||
+               verb.Equals("Compare", StringComparison.OrdinalIgnoreCase) ||
+               verb.Equals("Group", StringComparison.OrdinalIgnoreCase) ||
+               verb.Equals("Test", StringComparison.OrdinalIgnoreCase) ||
+               verb.Equals("Resolve", StringComparison.OrdinalIgnoreCase) ||
+               verb.Equals("Join", StringComparison.OrdinalIgnoreCase) ||
+               verb.Equals("Split", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsKnownPowerShellVerb(string verb)
+        => verb.Equals("Get", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Set", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("New", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Remove", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Clear", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Copy", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Move", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Rename", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Invoke", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Start", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Stop", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Restart", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Read", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Write", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Out", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Export", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Import", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("ConvertFrom", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("ConvertTo", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Select", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Where", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Sort", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Measure", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Format", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Compare", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Group", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Test", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Resolve", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Join", StringComparison.OrdinalIgnoreCase) ||
+           verb.Equals("Split", StringComparison.OrdinalIgnoreCase);
 
     private static string FormatCommandIdentifiers(IEnumerable<ShellCommandPermission> commands)
         => string.Join("; ", commands
