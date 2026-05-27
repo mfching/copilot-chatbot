@@ -88,10 +88,20 @@ public partial class SettingsWindow : Window
         ToolBox.Clear();
     }
 
+    private void ClearTools_Click(object sender, RoutedEventArgs e)
+    {
+        Settings.Permissions.AllowedTools.Clear();
+    }
+
     private void AddHost_Click(object sender, RoutedEventArgs e)
     {
         AddUnique(Settings.Permissions.AllowedHosts, HostBox.Text);
         HostBox.Clear();
+    }
+
+    private void ClearHosts_Click(object sender, RoutedEventArgs e)
+    {
+        Settings.Permissions.AllowedHosts.Clear();
     }
 
     private void RemoveSavedRule_Click(object sender, RoutedEventArgs e)
@@ -100,6 +110,11 @@ public partial class SettingsWindow : Window
         {
             Settings.Permissions.SavedRules.Remove(rule);
         }
+    }
+
+    private void ClearSavedRules_Click(object sender, RoutedEventArgs e)
+    {
+        Settings.Permissions.SavedRules.Clear();
     }
 
     private static void AddUnique(ICollection<string> list, string value)

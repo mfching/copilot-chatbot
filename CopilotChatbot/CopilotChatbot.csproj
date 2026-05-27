@@ -19,7 +19,7 @@
 
   <ItemGroup>
     <PackageReference Include="GitHub.Copilot.SDK" Version="0.3.0" />
-    <PackageReference Include="Markdig" Version="1.2.0" />
+    <PackageReference Include="Markdig.Signed" Version="1.1.1" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3967.48" />
     <PackageReference Include="Nerdbank.MessagePack" Version="1.2.4" />
     <PackageReference Include="WPF-UI" Version="4.3.0" />

@@ -27,6 +27,9 @@ public partial class MainWindow : Window
     private readonly List<ModelChoice> _models = [];
     private readonly Dictionary<ChatSessionView, long> _renderRevisions = [];
     private readonly Dictionary<ChatSessionView, ChatTabContent> _tabContents = [];
+    private readonly Dictionary<ChatSessionView, Task> _browserInitializationTasks = [];
+    private readonly Dictionary<ChatSessionView, Task> _sessionResumeTasks = [];
+    private readonly HashSet<ChatSessionView> _resumedSessions = [];
     private AppSettings _settings;
     private bool _isDarkTheme;
     private bool _showDetailMessages;
@@ -46,6 +49,7 @@ public partial class MainWindow : Window
         _localShortcutService = new LocalShortcutService(_copilot, _settingsStore);
         _localShortcutService.StatusChanged += LocalShortcut_StatusChanged;
         Loaded += MainWindow_Loaded;
+        Closing += MainWindow_Closing;
         Closed += MainWindow_Closed;
     }
 
@@ -68,10 +72,16 @@ public partial class MainWindow : Window
         await RestoreOpenChatsAsync();
     }
 
+    private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        SaveOpenChatsSafely(force: true, reason: "closing");
+    }
+
     private async void MainWindow_Closed(object? sender, EventArgs e)
     {
         try
         {
+            SaveOpenChatsSafely(force: true, reason: "closed");
             await _copilot.DisposeAsync();
         }
         catch
@@ -147,7 +157,10 @@ public partial class MainWindow : Window
     {
         if (e.Source == ChatTabs)
         {
-            RenderCurrentChat();
+            if (CurrentChat is { } chat)
+            {
+                _ = EnsureSelectedChatReadyAsync(chat);
+            }
             SaveOpenChats();
         }
     }
@@ -232,6 +245,7 @@ public partial class MainWindow : Window
         {
             chat.IsPending = false;
             GetTabContent(chat)?.SetState(false, chat.IsSessionMissing);
+            SaveOpenChats();
         }
     }
 
@@ -406,7 +420,7 @@ public partial class MainWindow : Window
     private async Task AddChatAsync(PersistedChatSession? persisted = null, bool select = true)
     {
         var chat = CreateChatTabItem(persisted, select);
-        await InitializeChatBrowserAsync(chat);
+        await EnsureChatBrowserInitializedAsync(chat);
     }
 
     /// <summary>
@@ -442,6 +456,10 @@ public partial class MainWindow : Window
 
         var tabContent = new ChatTabContent();
         tabContent.SetBrowser(chat.Browser);
+        if (persisted is not null)
+        {
+            tabContent.SetLoading(true);
+        }
         tabContent.SendRequested += prompt => _ = SendChatAsync(chat, prompt);
         tabContent.StopRequested += () => _ = StopChatAsync(chat);
         _tabContents[chat] = tabContent;
@@ -467,23 +485,98 @@ public partial class MainWindow : Window
     /// Initializes the embedded WebView2 browser for <paramref name="chat"/> and performs
     /// the first render.  Safe to call after <see cref="CreateChatTabItem"/>.
     /// </summary>
+    private Task EnsureChatBrowserInitializedAsync(ChatSessionView chat)
+    {
+        if (chat.Browser.CoreWebView2 is not null)
+        {
+            if (!chat.IsPageInitialized)
+            {
+                RenderChat(chat);
+            }
+
+            GetTabContent(chat)?.SetLoading(false);
+            return Task.CompletedTask;
+        }
+
+        if (_browserInitializationTasks.TryGetValue(chat, out var existing))
+        {
+            return existing;
+        }
+
+        var task = InitializeChatBrowserAsync(chat);
+        _browserInitializationTasks[chat] = task;
+        return task;
+    }
+
     private async Task InitializeChatBrowserAsync(ChatSessionView chat)
     {
         try
         {
+            GetTabContent(chat)?.SetLoading(true);
             await chat.Browser.EnsureCoreWebView2Async();
             chat.Browser.CoreWebView2.WebMessageReceived += Browser_WebMessageReceived;
+            chat.IsPageInitialized = false;
             RenderChat(chat);
+            GetTabContent(chat)?.SetLoading(false);
             SaveOpenChats();
         }
         catch (Exception ex)
         {
+            GetTabContent(chat)?.SetLoading(false);
             chat.Messages.Add(new ChatMessage
             {
                 Kind = ChatMessageKind.Error,
                 Content = "Embedded browser initialization failed.\n\n" + ex.Message
             });
             SaveOpenChats();
+        }
+        finally
+        {
+            _browserInitializationTasks.Remove(chat);
+        }
+    }
+
+    private async Task EnsureSelectedChatReadyAsync(ChatSessionView chat)
+    {
+        await EnsureChatBrowserInitializedAsync(chat);
+        RenderChat(chat);
+        await EnsureCopilotSessionResumedAsync(chat);
+    }
+
+    private Task EnsureCopilotSessionResumedAsync(ChatSessionView chat)
+    {
+        if (chat.IsSessionMissing || string.IsNullOrWhiteSpace(chat.CopilotSessionId) || _resumedSessions.Contains(chat))
+        {
+            return Task.CompletedTask;
+        }
+
+        if (_sessionResumeTasks.TryGetValue(chat, out var existing))
+        {
+            return existing;
+        }
+
+        var task = ResumeCopilotSessionAsync(chat);
+        _sessionResumeTasks[chat] = task;
+        return task;
+    }
+
+    private async Task ResumeCopilotSessionAsync(ChatSessionView chat)
+    {
+        try
+        {
+            GetTabContent(chat)?.SetLoading(true, "Restoring Copilot session...");
+            var model = ModelComboBox.SelectedItem as ModelChoice;
+            await _copilot.ResumeSessionAsync(chat, _settings, model, ReasoningComboBox.SelectedItem?.ToString());
+            _resumedSessions.Add(chat);
+        }
+        catch (Exception ex)
+        {
+            MarkSessionMissing(chat, $"Copilot session '{chat.CopilotSessionId}' could not be found or resumed.\n\n{ex.Message}");
+        }
+        finally
+        {
+            GetTabContent(chat)?.SetLoading(false);
+            _sessionResumeTasks.Remove(chat);
         }
     }
 
@@ -513,39 +606,9 @@ public partial class MainWindow : Window
             // the correct tab highlighted before browsers begin initializing.
             ActivateFirstRestoredChat(tabs);
 
-            // Phase 3: Initialize the embedded browser for each tab.  The currently
-            // selected tab goes first so its content appears as soon as possible;
-            // the remaining tabs are initialized sequentially afterwards.
-            var selectedChat = CurrentChat;
-            foreach (var tab in tabs.OrderBy(t => ReferenceEquals(t.Tag as ChatSessionView, selectedChat) ? 0 : 1))
+            if (CurrentChat is { } selectedChat)
             {
-                if (tab.Tag is ChatSessionView chat)
-                    await InitializeChatBrowserAsync(chat);
-            }
-
-            // Phase 4: Resume Copilot sessions now that all browsers are ready.
-            foreach (var tab in tabs)
-            {
-                if (tab.Tag is not ChatSessionView chat || chat.IsSessionMissing)
-                {
-                    continue;
-                }
-
-                if (string.IsNullOrWhiteSpace(chat.CopilotSessionId))
-                {
-                    MarkSessionMissing(chat, "This saved chat does not have a Copilot session id.");
-                    continue;
-                }
-
-                try
-                {
-                    var model = ModelComboBox.SelectedItem as ModelChoice;
-                    await _copilot.ResumeSessionAsync(chat, _settings, model, ReasoningComboBox.SelectedItem?.ToString());
-                }
-                catch (Exception ex)
-                {
-                    MarkSessionMissing(chat, $"Copilot session '{chat.CopilotSessionId}' could not be found or resumed.\n\n{ex.Message}");
-                }
+                await EnsureSelectedChatReadyAsync(selectedChat);
             }
         }
         finally
@@ -606,10 +669,11 @@ public partial class MainWindow : Window
         GetTabContent(chat)?.SetState(false, true);
     }
 
-    private void SaveOpenChats()
+    private void SaveOpenChats(bool force = false, string reason = "autosave")
     {
-        if (_isRestoringChats)
+        if (_isRestoringChats && !force)
         {
+            _debugLogger.Log("CHAT-SESSION-SAVE", $"Skipped while restoring | reason={reason}");
             return;
         }
 
@@ -618,11 +682,28 @@ public partial class MainWindow : Window
             .Where(chat => chat is not null)
             .Select(chat => ToPersistedSession(chat!))
             .ToList();
-        _chatSessionStore.Save(new PersistedChatState
+        var state = new PersistedChatState
         {
             Sessions = sessions,
             SelectedSessionId = CurrentChat?.CopilotSessionId
-        });
+        };
+
+        _chatSessionStore.Save(state);
+        _debugLogger.Log(
+            "CHAT-SESSION-SAVE",
+            $"Saved {state.Sessions.Count} sessions, {state.Sessions.Sum(session => session.Messages.Count)} messages | reason={reason} force={force} path={_chatSessionStore.StatePath}");
+    }
+
+    private void SaveOpenChatsSafely(bool force = false, string reason = "autosave")
+    {
+        try
+        {
+            SaveOpenChats(force, reason);
+        }
+        catch (Exception ex)
+        {
+            _debugLogger.Log("CHAT-SESSION-SAVE-ERROR", $"reason={reason} force={force} path={_chatSessionStore.StatePath}\n{ex}");
+        }
     }
 
     private static PersistedChatSession ToPersistedSession(ChatSessionView chat) =>
@@ -702,6 +783,9 @@ public partial class MainWindow : Window
         if (tab.Tag is ChatSessionView chat)
         {
             _renderRevisions.Remove(chat);
+            _browserInitializationTasks.Remove(chat);
+            _sessionResumeTasks.Remove(chat);
+            _resumedSessions.Remove(chat);
             if (_tabContents.TryGetValue(chat, out var tabContent))
             {
                 tabContent.Cleanup();
