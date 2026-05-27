@@ -1,12 +1,17 @@
-<Window x:Class="CopilotChatbot.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d"
-        Title="Copilot Chatbot" MinHeight="720" MinWidth="1080" Height="820" Width="1280"
-        Background="{DynamicResource PageBrush}">
+<Window
+    x:Class="CopilotChatbot.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    Title="Copilot Chatbot"
+    Width="1280"
+    Height="820"
+    MinWidth="1080"
+    MinHeight="720"
+    Background="{DynamicResource PageBrush}"
+    mc:Ignorable="d">
     <Window.Resources>
         <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF" />
         <SolidColorBrush x:Key="PanelBrush" Color="#FAFBFC" />
@@ -34,10 +39,17 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="9">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"
-                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        <Border
+                            x:Name="Chrome"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="9">
+                            <ContentPresenter
+                                Margin="{TemplateBinding Padding}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                TextElement.Foreground="{TemplateBinding Foreground}" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -59,7 +71,7 @@
             </Setter>
         </Style>
 
-        <!-- Accent (blue) send button – keeps white text on all states -->
+        <!--  Accent (blue) send button – keeps white text on all states  -->
         <Style x:Key="SendButtonStyle" TargetType="Button">
             <Setter Property="Padding" Value="15,8" />
             <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
@@ -71,12 +83,17 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Chrome" Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="9">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                              Margin="{TemplateBinding Padding}"
-                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        <Border
+                            x:Name="Chrome"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="9">
+                            <ContentPresenter
+                                Margin="{TemplateBinding Padding}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                TextElement.Foreground="{TemplateBinding Foreground}" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -113,10 +130,17 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="9">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"
-                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        <Border
+                            x:Name="Chrome"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="9">
+                            <ContentPresenter
+                                Margin="{TemplateBinding Padding}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                TextElement.Foreground="{TemplateBinding Foreground}" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -155,8 +179,12 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="1" CornerRadius="11">
+                        <Border
+                            x:Name="Chrome"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="11">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
@@ -182,23 +210,27 @@
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <Border Background="{DynamicResource PanelBrush}"
-                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                    BorderThickness="1,1,0,1"
-                                    CornerRadius="12,0,0,12"
-                                    Padding="6,6,0,6">
-                                <TabPanel IsItemsHost="True"
-                                          KeyboardNavigation.TabIndex="1"
-                                          Panel.ZIndex="1" />
+                            <Border
+                                Padding="6,6,0,6"
+                                Background="{DynamicResource PanelBrush}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1,1,0,1"
+                                CornerRadius="12,0,0,12">
+                                <TabPanel
+                                    Panel.ZIndex="1"
+                                    IsItemsHost="True"
+                                    KeyboardNavigation.TabIndex="1" />
                             </Border>
-                            <Border Grid.Column="1"
-                                    Background="{TemplateBinding Background}"
-                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="0,12,12,0">
-                                <ContentPresenter x:Name="PART_SelectedContentHost"
-                                                  ContentSource="SelectedContent"
-                                                  SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                            <Border
+                                Grid.Column="1"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="0,12,12,0">
+                                <ContentPresenter
+                                    x:Name="PART_SelectedContentHost"
+                                    ContentSource="SelectedContent"
+                                    SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
                             </Border>
                         </Grid>
                     </ControlTemplate>
@@ -217,14 +249,25 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
                         <Grid Margin="0,0,-1,0">
-                            <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8,0,0,8">
-                                <ContentPresenter ContentSource="Header" Margin="{TemplateBinding Padding}"
-                                                  TextElement.Foreground="{TemplateBinding Foreground}" />
+                            <Border
+                                x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8,0,0,8">
+                                <ContentPresenter
+                                    Margin="{TemplateBinding Padding}"
+                                    ContentSource="Header"
+                                    TextElement.Foreground="{TemplateBinding Foreground}" />
                             </Border>
-                            <Border x:Name="AccentBar" Width="3" HorizontalAlignment="Left"
-                                    Margin="0,7,0,7" CornerRadius="2"
-                                    Background="{DynamicResource AccentBrush}" Opacity="0" />
+                            <Border
+                                x:Name="AccentBar"
+                                Width="3"
+                                Margin="0,7,0,7"
+                                HorizontalAlignment="Left"
+                                Background="{DynamicResource AccentBrush}"
+                                CornerRadius="2"
+                                Opacity="0" />
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsSelected" Value="True">
@@ -244,7 +287,7 @@
             </Setter>
         </Style>
 
-        <!-- Primary (blue) toolbar button – used for New Chat -->
+        <!--  Primary (blue) toolbar button – used for New Chat  -->
         <Style x:Key="PrimaryToolbarButton" TargetType="Button">
             <Setter Property="Padding" Value="15,8" />
             <Setter Property="Margin" Value="0,0,8,0" />
@@ -257,12 +300,17 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Chrome" Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="9">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                              Margin="{TemplateBinding Padding}"
-                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        <Border
+                            x:Name="Chrome"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="9">
+                            <ContentPresenter
+                                Margin="{TemplateBinding Padding}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                TextElement.Foreground="{TemplateBinding Foreground}" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -280,12 +328,12 @@
             </Setter>
         </Style>
 
-        <!-- Ghost icon-only button – used for Refresh / Theme / Settings -->
+        <!--  Ghost icon-only button – used for Refresh / Theme / Settings  -->
         <Style x:Key="IconButton" TargetType="Button">
             <Setter Property="Width" Value="36" />
             <Setter Property="Height" Value="36" />
             <Setter Property="Padding" Value="0" />
-            <Setter Property="Margin" Value="0,0,4,0" />
+            <Setter Property="Margin" Value="0,0,1,0" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
@@ -293,10 +341,16 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Chrome" Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="8">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        <Border
+                            x:Name="Chrome"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8">
+                            <ContentPresenter
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                TextElement.Foreground="{TemplateBinding Foreground}" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -312,7 +366,49 @@
             </Setter>
         </Style>
 
-        <!-- Clean TextBox style: no WPF-UI bottom accent bar -->
+        <Style x:Key="IconToggleButton" TargetType="ToggleButton">
+            <Setter Property="Width" Value="36" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,0,1,0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border
+                            x:Name="Chrome"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8">
+                            <ContentPresenter
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource ControlBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource BorderBrushModern}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!--  Clean TextBox style: no WPF-UI bottom accent bar  -->
         <Style x:Key="PromptTextBoxStyle" TargetType="TextBox">
             <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
@@ -326,16 +422,18 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
-                        <Border x:Name="Chrome"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="6">
-                            <ScrollViewer x:Name="PART_ContentHost"
-                                          Focusable="False"
-                                          HorizontalScrollBarVisibility="Disabled"
-                                          VerticalScrollBarVisibility="Auto"
-                                          Padding="{TemplateBinding Padding}" />
+                        <Border
+                            x:Name="Chrome"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="6">
+                            <ScrollViewer
+                                x:Name="PART_ContentHost"
+                                Padding="{TemplateBinding Padding}"
+                                Focusable="False"
+                                HorizontalScrollBarVisibility="Disabled"
+                                VerticalScrollBarVisibility="Auto" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -355,7 +453,12 @@
         </Style>
     </Window.Resources>
     <DockPanel>
-        <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrushModern}" BorderThickness="0,0,0,1" Padding="14,7">
+        <Border
+            Padding="14,7"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderBrushModern}"
+            BorderThickness="0,0,0,1"
+            DockPanel.Dock="Top">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
@@ -363,93 +466,190 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <!-- Brand (left) -->
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,28,0">
-                    <Grid Width="34" Height="34" Margin="0,0,10,0">
+                <!--  Brand (left)  -->
+                <StackPanel
+                    Margin="0,0,16,0"
+                    VerticalAlignment="Center"
+                    Orientation="Horizontal">
+                    <Grid
+                        Width="34"
+                        Height="34"
+                        Margin="0,0,10,0">
                         <Border Background="#101828" CornerRadius="10" />
-                        <ui:SymbolIcon Symbol="BrainCircuit24" Foreground="#6CB6FF" FontSize="23"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <ui:SymbolIcon
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            FontSize="23"
+                            Foreground="#6CB6FF"
+                            Symbol="BrainCircuit24" />
                     </Grid>
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Copilot Chatbot" FontWeight="SemiBold" FontSize="15"
-                                   Foreground="{DynamicResource TextBrush}" />
-                        <TextBlock Text="AI-powered conversations" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" />
+                        <TextBlock
+                            FontSize="15"
+                            FontWeight="SemiBold"
+                            Foreground="{DynamicResource TextBrush}"
+                            Text="Copilot Chatbot" />
+                        <TextBlock
+                            FontSize="11"
+                            Foreground="{DynamicResource MutedTextBrush}"
+                            Text="AI-powered conversations" />
                     </StackPanel>
                 </StackPanel>
 
-                <!-- Model selectors (center, fills available space) -->
+                <!--  Model selectors (center, fills available space)  -->
                 <Grid Grid.Column="1" VerticalAlignment="Center">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="3*" MinWidth="340" />
                         <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="130" />
+                        <ColumnDefinition Width="120" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Text="Model" VerticalAlignment="Center" Margin="0,0,8,0"
-                               Foreground="{DynamicResource MutedTextBrush}" FontSize="12" FontWeight="SemiBold" />
-                    <ComboBox x:Name="ModelComboBox" Grid.Column="1" MinWidth="160"
-                              DisplayMemberPath="DisplayName" Margin="0,0,12,0"
-                              SelectionChanged="ModelComboBox_SelectionChanged" />
-                    <TextBlock Grid.Column="2" Text="Reasoning" VerticalAlignment="Center" Margin="0,0,8,0"
-                               Foreground="{DynamicResource MutedTextBrush}" FontSize="12" FontWeight="SemiBold" />
-                    <ComboBox x:Name="ReasoningComboBox" Grid.Column="3"
-                              SelectionChanged="ReasoningComboBox_SelectionChanged" />
+                    <TextBlock
+                        Margin="0,0,8,0"
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        FontWeight="SemiBold"
+                        Foreground="{DynamicResource MutedTextBrush}"
+                        Text="Model" />
+                    <ComboBox
+                        x:Name="ModelComboBox"
+                        Grid.Column="1"
+                        MinWidth="340"
+                        Margin="0,0,8,0"
+                        DisplayMemberPath="DisplayName"
+                        SelectionChanged="ModelComboBox_SelectionChanged" />
+                    <TextBlock
+                        Grid.Column="2"
+                        Margin="0,0,6,0"
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        FontWeight="SemiBold"
+                        Foreground="{DynamicResource MutedTextBrush}"
+                        Text="Reasoning" />
+                    <ComboBox
+                        x:Name="ReasoningComboBox"
+                        Grid.Column="3"
+                        SelectionChanged="ReasoningComboBox_SelectionChanged" />
                 </Grid>
 
-                <!-- Action buttons (right) -->
-                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
-                    <Button x:Name="NewChatButton" Style="{StaticResource PrimaryToolbarButton}"
-                            Click="NewChatButton_Click">
+                <!--  Action buttons (right)  -->
+                <StackPanel
+                    Grid.Column="2"
+                    Margin="8,0,0,0"
+                    VerticalAlignment="Center"
+                    Orientation="Horizontal">
+                    <Button
+                        x:Name="NewChatButton"
+                        Click="NewChatButton_Click"
+                        Style="{StaticResource PrimaryToolbarButton}">
                         <StackPanel Orientation="Horizontal">
-                            <ui:SymbolIcon Symbol="AddCircle20" FontSize="17" Margin="0,0,7,0" />
+                            <ui:SymbolIcon
+                                Margin="0,0,7,0"
+                                FontSize="17"
+                                Symbol="AddCircle20" />
                             <TextBlock Text="New Chat" />
                         </StackPanel>
                     </Button>
-                    <Button x:Name="ClearChatButton" Style="{StaticResource IconButton}"
-                            ToolTip="Clear chat history" Click="ClearChatButton_Click">
-                        <ui:SymbolIcon Symbol="Delete20" FontSize="18"
-                                       Foreground="{DynamicResource TextBrush}" />
+                    <Button
+                        x:Name="ClearChatButton"
+                        Click="ClearChatButton_Click"
+                        Style="{StaticResource IconButton}"
+                        ToolTip="Clear chat history">
+                        <ui:SymbolIcon
+                            FontSize="18"
+                            Foreground="{DynamicResource TextBrush}"
+                            Symbol="Delete20" />
                     </Button>
-                    <Button x:Name="SessionPromptButton" Style="{StaticResource IconButton}"
-                            ToolTip="Edit session system prompt" Click="SessionPromptButton_Click">
-                        <ui:SymbolIcon Symbol="NotepadPerson20" FontSize="18"
-                                       Foreground="{DynamicResource TextBrush}" />
+                    <Button
+                        x:Name="SessionPromptButton"
+                        Click="SessionPromptButton_Click"
+                        Style="{StaticResource IconButton}"
+                        ToolTip="Edit session system prompt">
+                        <ui:SymbolIcon
+                            FontSize="18"
+                            Foreground="{DynamicResource TextBrush}"
+                            Symbol="NotepadPerson20" />
                     </Button>
-                    <Button x:Name="RefreshModelsButton" Style="{StaticResource IconButton}"
-                            ToolTip="Refresh models" Click="RefreshModelsButton_Click">
-                        <ui:SymbolIcon Symbol="ArrowClockwise20" FontSize="18"
-                                       Foreground="{DynamicResource TextBrush}" />
+                    <Button
+                        x:Name="RefreshModelsButton"
+                        Click="RefreshModelsButton_Click"
+                        Style="{StaticResource IconButton}"
+                        ToolTip="Refresh models">
+                        <ui:SymbolIcon
+                            FontSize="18"
+                            Foreground="{DynamicResource TextBrush}"
+                            Symbol="ArrowClockwise20" />
                     </Button>
-                    <Border Width="1" Margin="4,6,8,6" Background="{DynamicResource BorderBrushModern}" />
-                    <CheckBox x:Name="ShowDetailsCheckBox"
-                              Content="Show details"
-                              VerticalAlignment="Center"
-                              Margin="0,0,10,0"
-                              Foreground="{DynamicResource MutedTextBrush}"
-                              FontSize="12"
-                              ToolTip="Show reasoning, tool calls, and intent messages"
-                              Click="ShowDetailsCheckBox_Click" />
-                    <Border Width="1" Margin="0,6,8,6" Background="{DynamicResource BorderBrushModern}" />
-                    <Button x:Name="ThemeButton" Style="{StaticResource IconButton}"
-                            ToolTip="Theme: Light — click for Dark" Click="ThemeButton_Click">
-                        <ui:SymbolIcon x:Name="ThemeIcon" Symbol="WeatherMoon20" FontSize="18"
-                                       Foreground="{DynamicResource TextBrush}" />
+                    <Border
+                        Width="1"
+                        Margin="2,6,4,6"
+                        Background="{DynamicResource BorderBrushModern}" />
+                    <ToggleButton
+                        x:Name="ShowDetailsCheckBox"
+                        Click="ShowDetailsCheckBox_Click"
+                        Style="{StaticResource IconToggleButton}"
+                        ToolTip="Show reasoning, tool calls, and intent messages">
+                        <ui:SymbolIcon
+                            FontSize="18"
+                            Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}"
+                            Symbol="TextBulletListSquare20" />
+                    </ToggleButton>
+                    <ToggleButton
+                        x:Name="MemoryCheckBox"
+                        Click="MemoryCheckBox_Click"
+                        Style="{StaticResource IconToggleButton}"
+                        ToolTip="Allow Copilot memory across sessions">
+                        <ui:SymbolIcon
+                            FontSize="18"
+                            Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}"
+                            Symbol="BrainCircuit20" />
+                    </ToggleButton>
+                    <Border
+                        Width="1"
+                        Margin="0,6,4,6"
+                        Background="{DynamicResource BorderBrushModern}" />
+                    <Button
+                        x:Name="ThemeButton"
+                        Click="ThemeButton_Click"
+                        Style="{StaticResource IconButton}"
+                        ToolTip="Theme: Light — click for Dark">
+                        <ui:SymbolIcon
+                            x:Name="ThemeIcon"
+                            FontSize="18"
+                            Foreground="{DynamicResource TextBrush}"
+                            Symbol="WeatherMoon20" />
                     </Button>
-                    <Button x:Name="SessionInfoButton" Style="{StaticResource IconButton}"
-                            ToolTip="Session capabilities (MCP servers, agents, skills)" Click="SessionInfoButton_Click">
-                        <ui:SymbolIcon Symbol="PlugConnected20" FontSize="18"
-                                       Foreground="{DynamicResource TextBrush}" />
+                    <Button
+                        x:Name="SessionInfoButton"
+                        Click="SessionInfoButton_Click"
+                        Style="{StaticResource IconButton}"
+                        ToolTip="Session capabilities (MCP servers, agents, skills)">
+                        <ui:SymbolIcon
+                            FontSize="18"
+                            Foreground="{DynamicResource TextBrush}"
+                            Symbol="PlugConnected20" />
                     </Button>
-                    <Button x:Name="SettingsButton" Style="{StaticResource IconButton}"
-                            Margin="0" ToolTip="Settings" Click="SettingsButton_Click">
-                        <ui:SymbolIcon Symbol="Settings20" FontSize="18"
-                                       Foreground="{DynamicResource TextBrush}" />
+                    <Button
+                        x:Name="SettingsButton"
+                        Margin="0"
+                        Click="SettingsButton_Click"
+                        Style="{StaticResource IconButton}"
+                        ToolTip="Settings">
+                        <ui:SymbolIcon
+                            FontSize="18"
+                            Foreground="{DynamicResource TextBrush}"
+                            Symbol="Settings20" />
                     </Button>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <StatusBar DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrushModern}" BorderThickness="0,1,0,0" Padding="8,2">
+        <StatusBar
+            Padding="8,2"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderBrushModern}"
+            BorderThickness="0,1,0,0"
+            DockPanel.Dock="Bottom">
             <StatusBarItem>
                 <TextBlock x:Name="ConnectionStatusTextBlock" Text="Copilot: not connected" />
             </StatusBarItem>
@@ -464,9 +664,11 @@
         </StatusBar>
 
         <Grid Background="{DynamicResource PageBrush}">
-            <TabControl x:Name="ChatTabs" Margin="6,8,6,8" TabStripPlacement="Left"
-                        SelectionChanged="ChatTabs_SelectionChanged" />
+            <TabControl
+                x:Name="ChatTabs"
+                Margin="6,8,6,8"
+                SelectionChanged="ChatTabs_SelectionChanged"
+                TabStripPlacement="Left" />
         </Grid>
     </DockPanel>
 </Window>
-

@@ -75,7 +75,8 @@ public sealed class ModelChoice
         get
         {
             var name = string.IsNullOrWhiteSpace(Name) || Name == Id ? Id : $"{Name} ({Id})";
-            return $"{name} - {CostText}{(IsFallback ? " - fallback" : "")}";
+            var costText = BillingMultiplier is null ? "" : $" - {CostText}";
+            return $"{name}{costText}{(IsFallback ? " - fallback" : "")}";
         }
     }
     public bool SupportsReasoningEffort { get; init; }

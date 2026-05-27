@@ -68,6 +68,7 @@ public partial class MainWindow : Window
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         ApplyThemeFromMode();
+        UpdateMemoryCheckBox();
         await RefreshModelsAsync(showErrorDialog: false, allowFallback: true);
         await RestoreOpenChatsAsync();
     }
@@ -148,6 +149,7 @@ public partial class MainWindow : Window
             _settings = window.Settings;
             _settingsStore.Save(_settings);
             _debugLogger.IsEnabled = _settings.EnableDebugLogging;
+            UpdateMemoryCheckBox();
             ApplyThemeFromMode();
         }
     }
@@ -1169,6 +1171,27 @@ public partial class MainWindow : Window
     {
         _showDetailMessages = ShowDetailsCheckBox.IsChecked == true;
         RenderCurrentChat();
+    }
+
+    private void MemoryCheckBox_Click(object sender, RoutedEventArgs e)
+    {
+        var enabled = MemoryCheckBox.IsChecked == true;
+        _settings.Permissions.AllowMemoryByDefault = enabled;
+        _settingsStore.Save(_settings);
+        UpdateMemoryCheckBox();
+
+        if (CurrentChat is { } chat)
+        {
+            GetTabContent(chat)?.SetStatus(enabled ? "Memory on" : "Memory off");
+        }
+    }
+
+    private void UpdateMemoryCheckBox()
+    {
+        MemoryCheckBox.IsChecked = _settings.Permissions.AllowMemoryByDefault;
+        MemoryCheckBox.ToolTip = _settings.Permissions.AllowMemoryByDefault
+            ? "Copilot memory across sessions is on"
+            : "Copilot memory across sessions is off";
     }
 
     private void ApplyThemeFromMode()
