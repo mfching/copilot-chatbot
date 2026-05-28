@@ -43,9 +43,13 @@ jobs:
         -p:EnableCompressionInSingleFile=true
         --output publish
 
-    # Upload the single binary as a build artifact
+    # Zip the published output
+    - name: Zip build output
+      run: Compress-Archive -Path publish\* -DestinationPath CopilotChatbot-win-x64.zip
+
+    # Upload the zip as a build artifact
     - name: Upload build artifact
       uses: actions/upload-artifact@v4
       with:
         name: CopilotChatbot-win-x64
-        path: publish\CopilotChatbot.exe
+        path: CopilotChatbot-win-x64.zip
