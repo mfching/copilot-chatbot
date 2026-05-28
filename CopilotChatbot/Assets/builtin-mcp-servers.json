@@ -2,8 +2,10 @@
   "mcpServers": {
     "github-mcp-server": {
       "type": "http",
-      "url": "https://api.individual.githubcopilot.com/mcp/readonly",
-      "headers": {},
+      "url": "https://api.githubcopilot.com/mcp/readonly",
+      "headers": {
+        "Authorization": "Bearer $env:GITHUB_TOKEN"
+      },
       "tools": [ "*" ]
     }
   }

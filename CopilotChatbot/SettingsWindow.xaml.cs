@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
 using CopilotChatbot.Models;
 using CopilotChatbot.Services;
 using Microsoft.Win32;
@@ -49,11 +51,12 @@ public partial class SettingsWindow : Window
         {
             Name = SecretNameBox.Text.Trim(),
             EnvironmentVariable = SecretEnvBox.Text.Trim(),
-            EncryptedValue = _store.ProtectSecret(SecretValueBox.Password)
+            EncryptedValue = _store.ProtectSecret(GetSecretValue())
         });
         SecretNameBox.Clear();
         SecretEnvBox.Clear();
         SecretValueBox.Clear();
+        SecretValueTextBox.Clear();
     }
 
     private void RemoveSecret_Click(object sender, RoutedEventArgs e)
@@ -144,9 +147,113 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void RevealGitHubTokenButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (GitHubTokenTextBox.Visibility == Visibility.Collapsed)
+        {
+            GitHubTokenTextBox.Text = GitHubTokenBox.Password;
+            GitHubTokenBox.Visibility = Visibility.Collapsed;
+            GitHubTokenTextBox.Visibility = Visibility.Visible;
+            RevealGitHubTokenIcon.Symbol = SymbolRegular.EyeOff20;
+        }
+        else
+        {
+            GitHubTokenBox.Password = GitHubTokenTextBox.Text;
+            GitHubTokenTextBox.Visibility = Visibility.Collapsed;
+            GitHubTokenBox.Visibility = Visibility.Visible;
+            RevealGitHubTokenIcon.Symbol = SymbolRegular.Eye20;
+        }
+    }
+
+    private void RevealSecretGridButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button ||
+            button.DataContext is not UserSecretSetting secret ||
+            FindVisualParent<DataGridRow>(button) is not { } row ||
+            FindVisualChild<TextBlock>(row, "SecretGridValueText") is not { } valueText)
+        {
+            return;
+        }
+
+        var isRevealed = button.Tag as string == "revealed";
+        if (isRevealed)
+        {
+            valueText.Text = "********";
+            valueText.Foreground = (Brush)FindResource("MutedTextBrush");
+            SetRevealButtonIcon(button, SymbolRegular.Eye20);
+            button.Tag = null;
+            return;
+        }
+
+        valueText.Text = _store.UnprotectSecret(secret.EncryptedValue);
+        valueText.Foreground = (Brush)FindResource("TextBrush");
+        SetRevealButtonIcon(button, SymbolRegular.EyeOff20);
+        button.Tag = "revealed";
+    }
+
+    private static void SetRevealButtonIcon(Button button, SymbolRegular symbol)
+    {
+        if (button.Content is Wpf.Ui.Controls.SymbolIcon icon)
+        {
+            icon.Symbol = symbol;
+        }
+    }
+
+    private static T? FindVisualParent<T>(DependencyObject child)
+        where T : DependencyObject
+    {
+        var parent = VisualTreeHelper.GetParent(child);
+        while (parent is not null)
+        {
+            if (parent is T match)
+            {
+                return match;
+            }
+
+            parent = VisualTreeHelper.GetParent(parent);
+        }
+
+        return null;
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject parent, string name)
+        where T : FrameworkElement
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T element && element.Name == name)
+            {
+                return element;
+            }
+
+            var nested = FindVisualChild<T>(child, name);
+            if (nested is not null)
+            {
+                return nested;
+            }
+        }
+
+        return null;
+    }
+
+    private string GetGitHubToken()
+    {
+        return GitHubTokenTextBox.Visibility == Visibility.Visible
+            ? GitHubTokenTextBox.Text
+            : GitHubTokenBox.Password;
+    }
+
+    private string GetSecretValue()
+    {
+        return SecretValueTextBox.Visibility == Visibility.Visible
+            ? SecretValueTextBox.Text
+            : SecretValueBox.Password;
+    }
+
     private void Save_Click(object sender, RoutedEventArgs e)
     {
-        Settings.GitHubToken = GitHubTokenBox.Password;
+        Settings.GitHubToken = GetGitHubToken();
         Settings.WorkingDirectory = string.IsNullOrWhiteSpace(WorkingDirectoryBox.Text) ? null : WorkingDirectoryBox.Text.Trim();
         Settings.Permissions.AllowMcpByDefault = AllowMcpCheckBox.IsChecked == true;
         Settings.Permissions.AllowCustomToolsByDefault = AllowCustomToolsCheckBox.IsChecked == true;

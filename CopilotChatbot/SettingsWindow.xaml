@@ -354,7 +354,18 @@
                                        TextWrapping="Wrap" Margin="0,0,0,16" />
                             <Separator Background="{DynamicResource BorderBrushModern}" Margin="0,0,0,16" />
                             <TextBlock Text="Personal Access Token" Style="{StaticResource FieldLabel}" />
-                            <PasswordBox x:Name="GitHubTokenBox" />
+                            <Grid>
+                                <PasswordBox x:Name="GitHubTokenBox" Padding="9,0,36,0" />
+                                <TextBox x:Name="GitHubTokenTextBox" Padding="9,0,36,0" Visibility="Collapsed" />
+                                <Button x:Name="RevealGitHubTokenButton"
+                                        Style="{StaticResource RevealButton}"
+                                        HorizontalAlignment="Right" VerticalAlignment="Center"
+                                        Margin="0,0,4,0" ToolTip="Show / hide token"
+                                        Click="RevealGitHubTokenButton_Click">
+                                    <ui:SymbolIcon x:Name="RevealGitHubTokenIcon" Symbol="Eye20" FontSize="14"
+                                                   Foreground="{DynamicResource MutedTextBrush}" />
+                                </Button>
+                            </Grid>
                             <TextBlock Text="Generate a token at github.com/settings/tokens with the 'copilot' scope."
                                        Foreground="{DynamicResource MutedTextBrush}" FontSize="11"
                                        Margin="0,6,0,16" TextWrapping="Wrap" />
@@ -450,6 +461,31 @@
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
                                     <DataGridTextColumn Header="Environment Variable" Binding="{Binding EnvironmentVariable}" Width="*" />
+                                    <DataGridTemplateColumn Header="Value" Width="1.2*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="6,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock x:Name="SecretGridValueText"
+                                                               Text="********"
+                                                               Foreground="{DynamicResource MutedTextBrush}"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               VerticalAlignment="Center" />
+                                                    <Button x:Name="RevealSecretGridButton"
+                                                            Grid.Column="1"
+                                                            Style="{StaticResource RevealButton}"
+                                                            ToolTip="Show / hide value"
+                                                            Click="RevealSecretGridButton_Click">
+                                                        <ui:SymbolIcon Symbol="Eye20" FontSize="14"
+                                                                       Foreground="{DynamicResource MutedTextBrush}" />
+                                                    </Button>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </Border>
