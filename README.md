@@ -2,12 +2,16 @@
 
 Desktop chat client for GitHub Copilot built with WPF and .NET 9 on Windows.
 
-It provides a tabbed chat UI, session restore, model selection, reasoning effort controls, permission prompts, local slash shortcuts, MCP/agent/skill visibility, and rich Markdown/HTML rendering through WebView2.
+It provides a tabbed chat UI, session restore, model selection, reasoning effort controls, permission prompts, local slash shortcuts, MCP/agent/skill visibility, encrypted local settings, and rich Markdown/HTML rendering through WebView2.
 
 ## Features
 
 - Multi-tab chat sessions with per-tab system prompts
-- Saved chat sessions restored on startup
+- Saved chat sessions restored on startup, with debounced background persistence
+- Per-tab status indicators:
+  - Busy spinner while Copilot is thinking or running tools
+  - Typing indicator while a response is streaming
+  - Unread marker and bold title for background responses
 - Live model discovery from GitHub Copilot SDK
 - Reasoning effort selection for models that support it
 - Chat navigation controls:
@@ -21,14 +25,16 @@ It provides a tabbed chat UI, session restore, model selection, reasoning effort
   - Saved permission rules
   - Per-command shell approvals for Copilot SDK shell permission requests
   - Memory permission toggle through `/memory`
-- User secrets mapped to environment variables (stored encrypted with Windows DPAPI)
+- GitHub token and user secrets with show/hide controls
+- Optional settings password for AES-256 encryption of sensitive settings
+- User secrets mapped to environment variables for Copilot CLI and MCP servers
 - Configurable working directory for Copilot CLI execution
 - MCP server, agent, and skill capability view
 - Local slash shortcuts for inspecting or changing runtime state
 - Extra agent and skill folder configuration
 - Light, dark, and follow-the-sun theme options
 - Optional debug logging
-- Markdown rendering, collapsible message cards, response pop-out windows, and embedded HTML previews
+- Markdown rendering, collapsible message cards, response pop-out windows, embedded HTML previews, and iframe preview pop-out windows
 - Custom application icon and Windows `.ico` packaging
 
 ## Tech Stack
@@ -68,6 +74,7 @@ dotnet run --project .\CopilotChatbot\CopilotChatbot.csproj
 Open **Settings** in the app and configure:
 
 - GitHub token
+- Optional settings password for encrypting saved GitHub credentials and user secrets
 - Optional working directory (defaults to your user profile folder)
 - Optional user secrets (`Name`, `Environment Variable`, `Value`)
 - Optional permission defaults and allow-lists
@@ -77,6 +84,16 @@ Open **Settings** in the app and configure:
 - Optional debug logging
 
 Then use **Refresh Models** to fetch available models from the Copilot runtime.
+
+### Settings Password
+
+If a settings password is configured, the app derives an AES-256 key from that password and a built-in salt. The key is kept only in memory for the current app session.
+
+- The password itself is not written to `settings.json`.
+- On startup, encrypted settings trigger a password prompt.
+- If the password is wrong or cancelled, the app warns and starts with blank settings for that session.
+- Clearing the settings password in Settings and saving writes the GitHub token and user secret values as plaintext.
+- Existing legacy DPAPI-encrypted user secrets can still be read and are rewritten using the active save mode.
 
 ## Local Slash Shortcuts
 
@@ -95,11 +112,13 @@ Shortcuts are handled locally by the app and are not sent as chat prompts.
 The app stores local configuration under:
 
 - `%APPDATA%\CopilotChatbot\settings.json`
-- `%APPDATA%\CopilotChatbot\chat-sessions.json`
+- `%APPDATA%\CopilotChatbot\chat-sessions.json.gz`
 
 If debug logging is enabled, logs are written to:
 
 - `%APPDATA%\CopilotChatbot\debug-YYYY-MM-DD.log`
+
+Sensitive values in `settings.json` are encrypted only when a settings password is active. Otherwise, the GitHub token and user secret values are stored as plaintext.
 
 ## MCP Notes
 
@@ -108,7 +127,9 @@ If debug logging is enabled, logs are written to:
   - `%APPDATA%\GitHub Copilot\mcp-config.json`
   - `<working-dir>/.github/copilot/mcp.json`
   - `<working-dir>/.copilot/mcp-config.json`
-- A bundled read-only GitHub MCP server is registered by default.
+- A default read-only GitHub MCP server is added when missing and is also available as a bundled fallback.
+- Existing MCP server entries are not overwritten; server names are first-wins.
+- The default GitHub MCP server uses `https://api.githubcopilot.com/mcp/readonly` and keeps `Authorization: Bearer $env:GITHUB_TOKEN` in config so the Copilot SDK/runtime can resolve the environment variable.
 - The configured working directory is where Copilot CLI runs.
 - Project-level Copilot/MCP config is typically resolved relative to the working directory.
 - Agents and skills are loaded from the default Copilot locations plus any extra folders configured in Settings.
@@ -130,6 +151,9 @@ Default agent and skill locations shown by the app:
 - `CopilotChatbot/MainWindow.*` - main chat UI and interaction logic
 - `CopilotChatbot/ChatTabContent.*` - per-tab chat input, status, and navigation controls
 - `CopilotChatbot/SettingsWindow.*` - settings UI and persistence wiring
+- `CopilotChatbot/SettingsPasswordWindow.*` - startup unlock prompt for encrypted settings
+- `CopilotChatbot/ResponseWindow.*` - full response pop-out viewer
+- `CopilotChatbot/IframePreviewWindow.*` - embedded HTML iframe pop-out viewer
 - `.github/workflows/dotnet-build.yaml` - GitHub Actions build workflow
 
 ## Troubleshooting
@@ -143,12 +167,16 @@ Default agent and skill locations shown by the app:
   - Run `/cwd` to confirm project-level MCP config is being resolved from the expected folder.
 - Authentication or connection failures:
   - Re-check token value in Settings.
+  - If settings are encrypted, restart and confirm the startup settings password unlocks successfully.
   - Confirm network/proxy restrictions do not block Copilot CLI.
 - Memory requests are rejected:
   - Run `/memory` to check the current state.
   - Run `/memory on` if you want Copilot memory writes/votes to be approved automatically.
 - Web content not rendering:
   - Ensure WebView2 runtime is available and updated on the machine.
+- UI slows while responses stream:
+  - Chat updates and session saves are throttled, but very large HTML previews can still be expensive to render in WebView2.
+  - Use the iframe pop-out button for large embedded previews.
 - Manual GitHub Actions run does not start:
   - Confirm Actions are enabled for the repository.
   - Confirm the workflow exists on the default branch at `.github/workflows/dotnet-build.yaml`.
