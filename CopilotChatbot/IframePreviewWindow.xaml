@@ -53,8 +53,8 @@
                     <Button.Template>
                         <ControlTemplate TargetType="Button">
                             <Border x:Name="Chr"
-                                    Background="{StaticResource AccentBrush}"
-                                    BorderBrush="{StaticResource AccentBrush}"
+                                    Background="{DynamicResource AccentBrush}"
+                                    BorderBrush="{DynamicResource AccentBrush}"
                                     BorderThickness="1"
                                     CornerRadius="8">
                                 <StackPanel Orientation="Horizontal" Margin="12,7">
