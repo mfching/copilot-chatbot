@@ -17,8 +17,8 @@
     </Window.Resources>
     <DockPanel>
         <Border DockPanel.Dock="Top"
-                Background="{StaticResource SurfaceBrush}"
-                BorderBrush="{StaticResource BorderBrushModern}"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource BorderBrushModern}"
                 BorderThickness="0,0,0,1"
                 Padding="16,11">
             <Grid>
@@ -27,15 +27,15 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Border Background="{StaticResource ControlBrush}"
-                            BorderBrush="{StaticResource BorderBrushModern}"
+                    <Border Background="{DynamicResource ControlBrush}"
+                            BorderBrush="{DynamicResource BorderBrushModern}"
                             BorderThickness="1"
                             CornerRadius="8"
                             Width="32"
                             Height="32"
                             Margin="0,0,10,0">
                         <ui:SymbolIcon Symbol="Open20"
-                                       Foreground="{StaticResource AccentBrush}"
+                                       Foreground="{DynamicResource AccentBrush}"
                                        FontSize="18"
                                        HorizontalAlignment="Center"
                                        VerticalAlignment="Center" />
