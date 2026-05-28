@@ -1,0 +1,65 @@
+name: .NET Core Desktop
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+
+  build:
+
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    env:
+      Project_Path: CopilotChatbot\CopilotChatbot.csproj
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    # Install the .NET Core workload
+    - name: Install .NET Core
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    # Restore dependencies
+    - name: Restore dependencies
+      run: dotnet restore $env:Project_Path
+
+    # Build and publish as a self-contained single-file executable
+    - name: Publish single-file binary
+      run: >
+        dotnet publish $env:Project_Path
+        --configuration Release
+        --runtime win-x64
+        --self-contained true
+        -p:PublishSingleFile=true
+        -p:IncludeNativeLibrariesForSelfExtract=true
+        -p:EnableCompressionInSingleFile=true
+        --output publish
+
+    # Zip the published output
+    - name: Zip build output
+      run: Compress-Archive -Path publish\* -DestinationPath CopilotChatbot-win-x64.zip
+
+    # Upload the zip as a build artifact
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: CopilotChatbot-win-x64
+        path: CopilotChatbot-win-x64.zip
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      if: github.ref == 'refs/heads/main'
+      with:
+        tag_name: build-${{ github.run_number }}
+        name: Build ${{ github.run_number }}
+        files: CopilotChatbot-win-x64.zip
