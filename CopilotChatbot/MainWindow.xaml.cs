@@ -988,6 +988,20 @@ public partial class MainWindow : Window
             ToolTip = "Unread response"
         };
 
+        var unreadIndicator = new Ellipse
+        {
+            Name = "TabUnreadIndicator",
+            Width = 7,
+            Height = 7,
+            Margin = new Thickness(0, 0, 7, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Fill = (Brush)FindResource("AccentBrush"),
+            Visibility = tab.Tag is ChatSessionView { HasUnreadResponse: true }
+                ? Visibility.Visible
+                : Visibility.Collapsed,
+            ToolTip = "Unread response"
+        };
+
         var closeButton = new Button
         {
             Name = "TabCloseButton",
