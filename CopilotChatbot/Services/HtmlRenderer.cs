@@ -113,6 +113,8 @@ main.streaming .open-btn { pointer-events:none; color:var(--icon-dim); opacity:.
 .frame-body hr { border:0; border-top:1px solid var(--border); margin:.8em 0; }
 .frame-body img { max-width:100%; border-radius:6px; }
 .live-frame { margin:.5em 0; border:1px solid var(--border); border-radius:6px; background:var(--card); overflow:hidden; position:relative; }
+.frame-popout-btn { position:absolute; top:6px; right:6px; z-index:2; border:1px solid var(--border); background:var(--card); color:var(--icon-dim); padding:5px; cursor:pointer; line-height:0; display:inline-flex; align-items:center; border-radius:5px; opacity:.78; box-shadow:0 1px 3px rgba(0,0,0,.12); }
+.frame-popout-btn:hover { color:var(--icon-hover); opacity:1; background:var(--code-bg); }
 .live-frame .spinner-wrap { min-height:220px; display:flex; align-items:center; justify-content:center; }
 .live-frame .spinner { width:24px; height:24px; border-radius:50%; border:3px solid rgba(127,127,127,.28); border-top-color:var(--link); animation:spin .8s linear infinite; }
 .live-frame iframe.live-iframe { width:100%; border:0; min-height:220px; resize:vertical; overflow:auto; display:block; visibility:hidden; }
@@ -149,6 +151,15 @@ document.addEventListener('click', e => {
   e.preventDefault();
   e.stopPropagation();
   chrome.webview.postMessage({ type: 'open', id: button.dataset.openId });
+});
+document.addEventListener('click', e => {
+  const button = e.target.closest('[data-popout-frame]');
+  if (!button) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const frame = button.closest('.live-frame')?.querySelector('iframe.live-iframe');
+  if (!frame) return;
+  chrome.webview.postMessage({ type: 'openFrame', html: frame.srcdoc || '' });
 });
 </script>
 </body>
@@ -341,6 +352,7 @@ document.addEventListener('click', e => {
                 return $"""
 <div style="margin:.5em 0">
   <div class="live-frame">
+    <button class="frame-popout-btn" data-popout-frame="1" title="Pop out preview"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M10 2h4m0 0v4m0-4L7.5 8.5"/></svg></button>
     <div class="spinner-wrap"><div class="spinner" aria-hidden="true"></div></div>
     <iframe class="live-iframe" srcdoc="{srcdoc}" sandbox="allow-scripts allow-same-origin" onload="this.closest(&quot;.live-frame&quot;)?.classList.add(&quot;ready&quot;)"></iframe>
   </div>

@@ -21,8 +21,11 @@ public sealed class CopilotChatService : IAsyncDisposable
     private CopilotClient? _client;
     private readonly ConcurrentDictionary<ChatSessionView, CopilotSession> _sessions = [];
     private readonly ConcurrentDictionary<string, byte> _sessionPermissionApprovals = [];
+    private readonly ConcurrentQueue<ChatUpdate> _pendingChatUpdates = new();
     private readonly Dictionary<string, McpServerConfig> _mcpServerConfigs = new();
+    private int _chatUpdateFlushScheduled;
     private volatile SessionCapabilitiesSnapshot _capabilitiesSnapshot = new([], [], []);
+    private static readonly TimeSpan ChatUpdateThrottleDelay = TimeSpan.FromMilliseconds(50);
     public SessionCapabilitiesSnapshot CapabilitiesSnapshot => _capabilitiesSnapshot;
     public event Action<CopilotUsageStatus>? UsageUpdated;
     public event Action<ChatSessionView, bool>? SessionPendingChanged;
@@ -1359,7 +1362,12 @@ public sealed class CopilotChatService : IAsyncDisposable
 
     private void SetPending(ChatSessionView chat, bool isPending)
     {
-        App.Current.Dispatcher.Invoke(() =>
+        if (!isPending)
+        {
+            FlushChatUpdatesOnDispatcher();
+        }
+
+        App.Current.Dispatcher.BeginInvoke(() =>
         {
             chat.IsPending = isPending;
             if (!isPending)
@@ -1421,40 +1429,102 @@ public sealed class CopilotChatService : IAsyncDisposable
             quota?.ResetDate);
     }
 
-    private static void AddOrUpdate(ChatSessionView chat, ChatMessageKind kind, string? content, string key, bool append = false)
+    private void AddOrUpdate(ChatSessionView chat, ChatMessageKind kind, string? content, string key, bool append = false)
     {
         if (string.IsNullOrEmpty(content))
         {
             return;
         }
 
-        App.Current.Dispatcher.Invoke(() =>
+        _pendingChatUpdates.Enqueue(ChatUpdate.Upsert(chat, kind, content, key, append));
+        ScheduleChatUpdateFlush(ChatUpdateThrottleDelay);
+    }
+
+    private void RemoveMessage(ChatSessionView chat, string key)
+    {
+        _pendingChatUpdates.Enqueue(ChatUpdate.Delete(chat, key));
+        ScheduleChatUpdateFlush(TimeSpan.Zero);
+    }
+
+    private void ScheduleChatUpdateFlush(TimeSpan delay)
+    {
+        if (Interlocked.Exchange(ref _chatUpdateFlushScheduled, 1) == 1)
         {
-            var existing = chat.Messages.FirstOrDefault(m => m.Id == key);
-            if (existing is null)
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            if (delay > TimeSpan.Zero)
             {
-                chat.Messages.Add(new ChatMessage { Id = key, Kind = kind, Content = content });
+                await Task.Delay(delay);
             }
-            else
-            {
-                var index = chat.Messages.IndexOf(existing);
-                existing.Content = append ? existing.Content + content : content;
-                chat.Messages.RemoveAt(index);
-                chat.Messages.Insert(index, existing);
-            }
+
+            FlushChatUpdatesOnDispatcher();
         });
     }
 
-    private static void RemoveMessage(ChatSessionView chat, string key)
+    private void FlushChatUpdatesOnDispatcher()
     {
-        App.Current.Dispatcher.Invoke(() =>
+        App.Current.Dispatcher.BeginInvoke(FlushPendingChatUpdatesOnUi);
+    }
+
+    private void FlushPendingChatUpdatesOnUi()
+    {
+        while (_pendingChatUpdates.TryDequeue(out var update))
         {
-            var existing = chat.Messages.FirstOrDefault(m => m.Id == key);
-            if (existing is not null)
+            if (update.IsRemove)
             {
-                chat.Messages.Remove(existing);
+                var existing = update.Chat.Messages.FirstOrDefault(m => m.Id == update.Key);
+                if (existing is not null)
+                {
+                    update.Chat.Messages.Remove(existing);
+                }
+
+                continue;
             }
-        });
+
+            var existingMessage = update.Chat.Messages.FirstOrDefault(m => m.Id == update.Key);
+            if (existingMessage is null)
+            {
+                update.Chat.Messages.Add(new ChatMessage
+                {
+                    Id = update.Key,
+                    Kind = update.Kind,
+                    Content = update.Content
+                });
+            }
+            else
+            {
+                var index = update.Chat.Messages.IndexOf(existingMessage);
+                existingMessage.Content = update.Append
+                    ? existingMessage.Content + update.Content
+                    : update.Content;
+                update.Chat.Messages.RemoveAt(index);
+                update.Chat.Messages.Insert(index, existingMessage);
+            }
+        }
+
+        Interlocked.Exchange(ref _chatUpdateFlushScheduled, 0);
+        if (!_pendingChatUpdates.IsEmpty)
+        {
+            ScheduleChatUpdateFlush(ChatUpdateThrottleDelay);
+        }
+    }
+
+    private sealed record ChatUpdate(
+        ChatSessionView Chat,
+        ChatMessageKind Kind,
+        string Content,
+        string Key,
+        bool Append,
+        bool IsRemove)
+    {
+        public static ChatUpdate Upsert(ChatSessionView chat, ChatMessageKind kind, string content, string key, bool append)
+            => new(chat, kind, content, key, append, false);
+
+        public static ChatUpdate Delete(ChatSessionView chat, string key)
+            => new(chat, ChatMessageKind.System, "", key, false, true);
     }
 
     private void UpsertMcpServerSnapshot(string name, string status, IReadOnlyList<string>? tools = null)

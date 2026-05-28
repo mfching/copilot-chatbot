@@ -39,6 +39,7 @@ public sealed class ChatSessionView
     public bool IsSessionMissing { get; set; }
     public bool IsPageInitialized { get; set; }
     public bool IsPending { get; set; }
+    public bool HasUnreadResponse { get; set; }
     public string? SystemPrompt { get; set; }
     public string? LastStatus { get; set; }
     public ObservableCollection<ChatMessage> Messages { get; } = [];
