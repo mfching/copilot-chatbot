@@ -11,6 +11,8 @@ jobs:
   build:
 
     runs-on: windows-latest
+    permissions:
+      contents: write
 
     env:
       Project_Path: CopilotChatbot\CopilotChatbot.csproj
@@ -53,3 +55,11 @@ jobs:
       with:
         name: CopilotChatbot-win-x64
         path: CopilotChatbot-win-x64.zip
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      if: github.ref == 'refs/heads/main'
+      with:
+        tag_name: build-${{ github.run_number }}
+        name: Build ${{ github.run_number }}
+        files: CopilotChatbot-win-x64.zip
