@@ -36,6 +36,7 @@ public partial class MainWindow : Window
     private bool _isRestoringChats;
     private System.Windows.Threading.DispatcherTimer? _themeTimer;
     private readonly object _openChatSaveGate = new();
+    private readonly object _openChatWriteGate = new();
     private CancellationTokenSource? _pendingOpenChatSave;
     private Task _lastOpenChatSaveTask = Task.CompletedTask;
     private static readonly TimeSpan OpenChatSaveIdleDelay = TimeSpan.FromMilliseconds(900);
@@ -763,13 +764,11 @@ public partial class MainWindow : Window
 
         if (force)
         {
-            var task = SaveOpenChatStateInBackgroundAsync(state, reason, force, CancellationToken.None);
+            SaveOpenChatStateSynchronously(state, reason, force);
             lock (_openChatSaveGate)
             {
-                _lastOpenChatSaveTask = task;
+                _lastOpenChatSaveTask = Task.CompletedTask;
             }
-
-            task.GetAwaiter().GetResult();
             return;
         }
 
@@ -820,7 +819,30 @@ public partial class MainWindow : Window
         bool force,
         CancellationToken cancellationToken)
     {
-        await Task.Run(() => _chatSessionStore.Save(state), cancellationToken);
+        await Task.Run(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            lock (_openChatWriteGate)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                _chatSessionStore.Save(state);
+            }
+        }, cancellationToken);
+        LogOpenChatSave(state, reason, force);
+    }
+
+    private void SaveOpenChatStateSynchronously(PersistedChatState state, string reason, bool force)
+    {
+        lock (_openChatWriteGate)
+        {
+            _chatSessionStore.Save(state);
+        }
+
+        LogOpenChatSave(state, reason, force);
+    }
+
+    private void LogOpenChatSave(PersistedChatState state, string reason, bool force)
+    {
         _debugLogger.Log(
             "CHAT-SESSION-SAVE",
             $"Saved {state.Sessions.Count} sessions, {state.Sessions.Sum(session => session.Messages.Count)} messages | reason={reason} force={force} path={_chatSessionStore.StatePath}");
