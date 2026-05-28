@@ -43,6 +43,9 @@ public partial class SettingsWindow : Window
         LogPathTextBlock.Text = _debugLogger.CurrentLogPath;
         ThemeComboBox.ItemsSource = new[] { "Light", "Dark", "System", "Follow the sun" };
         ThemeComboBox.SelectedIndex = (int)Settings.Theme;
+        ResponseBufferingCheckBox.IsChecked = Settings.EnableResponseBuffering;
+        ResponseBufferIntervalSlider.Value = Math.Clamp(Settings.ResponseBufferIntervalMs <= 0 ? 1000 : Settings.ResponseBufferIntervalMs, 500, 2000);
+        UpdateResponseBufferControls();
     }
 
     private void AddSecret_Click(object sender, RoutedEventArgs e)
@@ -214,6 +217,29 @@ public partial class SettingsWindow : Window
         button.Tag = "revealed";
     }
 
+    private void ResponseBufferingCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        UpdateResponseBufferControls();
+    }
+
+    private void ResponseBufferIntervalSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        UpdateResponseBufferControls();
+    }
+
+    private void UpdateResponseBufferControls()
+    {
+        if (ResponseBufferIntervalSlider is null || ResponseBufferIntervalText is null)
+        {
+            return;
+        }
+
+        var enabled = ResponseBufferingCheckBox.IsChecked == true;
+        ResponseBufferIntervalSlider.IsEnabled = enabled;
+        ResponseBufferIntervalText.Text = $"{(int)ResponseBufferIntervalSlider.Value} ms";
+        ResponseBufferIntervalText.Opacity = enabled ? 1.0 : 0.55;
+    }
+
     private static void SetRevealButtonIcon(Button button, SymbolRegular symbol)
     {
         if (button.Content is Wpf.Ui.Controls.SymbolIcon icon)
@@ -299,6 +325,8 @@ public partial class SettingsWindow : Window
         Settings.Permissions.AllowCustomToolsByDefault = AllowCustomToolsCheckBox.IsChecked == true;
         Settings.DefaultSystemPrompt = string.IsNullOrWhiteSpace(SystemPromptBox.Text) ? null : SystemPromptBox.Text;
         Settings.EnableDebugLogging = EnableDebugLoggingCheckBox.IsChecked == true;
+        Settings.EnableResponseBuffering = ResponseBufferingCheckBox.IsChecked == true;
+        Settings.ResponseBufferIntervalMs = Math.Clamp((int)ResponseBufferIntervalSlider.Value, 500, 2000);
         Settings.Theme = (AppThemeMode)(ThemeComboBox.SelectedIndex >= 0 ? ThemeComboBox.SelectedIndex : 2);
         DialogResult = true;
     }

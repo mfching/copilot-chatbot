@@ -424,6 +424,35 @@
                             <ComboBox x:Name="ThemeComboBox" MaxWidth="260" HorizontalAlignment="Left" />
                             <TextBlock Text="Follow the sun uses light mode 7 am – 7 pm and dark mode outside those hours."
                                        Foreground="{DynamicResource MutedTextBrush}" FontSize="11"
+                                       TextWrapping="Wrap" Margin="0,6,0,16" />
+                            <Separator Background="{DynamicResource BorderBrushModern}" Margin="0,0,0,16" />
+                            <TextBlock Text="Response Updates" Style="{StaticResource FieldLabel}" />
+                            <CheckBox x:Name="ResponseBufferingCheckBox"
+                                      Content="Buffer streaming response updates"
+                                      Margin="0,0,0,10"
+                                      Checked="ResponseBufferingCheckBox_Changed"
+                                      Unchecked="ResponseBufferingCheckBox_Changed" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Slider x:Name="ResponseBufferIntervalSlider"
+                                        Minimum="500"
+                                        Maximum="2000"
+                                        TickFrequency="100"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="ResponseBufferIntervalSlider_ValueChanged" />
+                                <TextBlock x:Name="ResponseBufferIntervalText"
+                                           Grid.Column="1"
+                                           Width="72"
+                                           TextAlignment="Right"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource MutedTextBrush}"
+                                           FontSize="12" />
+                            </Grid>
+                            <TextBlock Text="Controls how often streaming response text is rendered. Lower values feel live; higher values reduce flicker."
+                                       Foreground="{DynamicResource MutedTextBrush}" FontSize="11"
                                        TextWrapping="Wrap" Margin="0,6,0,0" />
                         </StackPanel>
                     </Border>
