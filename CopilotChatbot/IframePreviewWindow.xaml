@@ -44,8 +44,7 @@
                         <TextBlock Text="Live Preview"
                                    FontWeight="SemiBold"
                                    FontSize="14"
-                                   Foreground="{StaticResource TextBrush}" />
-                        <TextBlock Text="Popped out from chat history"
+                                   Foreground="{DynamicResource TextBrush}" />
                                    FontSize="11"
                                    Foreground="{StaticResource MutedTextBrush}" />
                     </StackPanel>
