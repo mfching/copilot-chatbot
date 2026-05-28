@@ -106,7 +106,7 @@ public sealed class SettingsStore
             return ProtectWithAes(value);
         }
 
-        return value;
+        return ProtectWithDpapi(value);
     }
 
     public string UnprotectSecret(string encryptedValue)
@@ -176,6 +176,13 @@ public sealed class SettingsStore
     {
         return value.StartsWith(AesPrefix, StringComparison.Ordinal) ||
                value.StartsWith(DpapiPrefix, StringComparison.Ordinal);
+    }
+
+    private static string ProtectWithDpapi(string value)
+    {
+        var bytes = Encoding.UTF8.GetBytes(value);
+        var protectedBytes = ProtectedData.Protect(bytes, null, DataProtectionScope.CurrentUser);
+        return DpapiPrefix + Convert.ToBase64String(protectedBytes);
     }
 
     private string ProtectWithAes(string value)
