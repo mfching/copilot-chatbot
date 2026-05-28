@@ -158,8 +158,10 @@ document.addEventListener('click', e => {
   e.preventDefault();
   e.stopPropagation();
   const frame = button.closest('.live-frame')?.querySelector('iframe.live-iframe');
-  if (!frame) return;
-  chrome.webview.postMessage({ type: 'openFrame', html: frame.srcdoc || '' });
+  const htmlBase64 = button.getAttribute('data-popout-html-b64') || '';
+  const html = frame?.getAttribute('srcdoc') || frame?.srcdoc || '';
+  if (!htmlBase64 && !html) return;
+  chrome.webview.postMessage({ type: 'openFrame', htmlBase64, html });
 });
 </script>
 </body>
@@ -346,13 +348,14 @@ document.addEventListener('click', e => {
             m =>
             {
                 var decoded = WebUtility.HtmlDecode(m.Groups[1].Value);
+                var payload = Convert.ToBase64String(Encoding.UTF8.GetBytes(decoded));
                 var srcdoc = decoded
                     .Replace("&", "&amp;")
                     .Replace("\"", "&quot;");
                 return $"""
 <div style="margin:.5em 0">
   <div class="live-frame">
-    <button class="frame-popout-btn" data-popout-frame="1" title="Pop out preview"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M10 2h4m0 0v4m0-4L7.5 8.5"/></svg></button>
+    <button class="frame-popout-btn" data-popout-frame="1" data-popout-html-b64="{payload}" title="Pop out preview"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M10 2h4m0 0v4m0-4L7.5 8.5"/></svg></button>
     <div class="spinner-wrap"><div class="spinner" aria-hidden="true"></div></div>
     <iframe class="live-iframe" srcdoc="{srcdoc}" sandbox="allow-scripts allow-same-origin" onload="this.closest(&quot;.live-frame&quot;)?.classList.add(&quot;ready&quot;)"></iframe>
   </div>

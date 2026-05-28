@@ -45,6 +45,7 @@
                                    FontWeight="SemiBold"
                                    FontSize="14"
                                    Foreground="{DynamicResource TextBrush}" />
+                        <TextBlock Text="Popped out from chat history"
                                    FontSize="11"
                                    Foreground="{StaticResource MutedTextBrush}" />
                     </StackPanel>
