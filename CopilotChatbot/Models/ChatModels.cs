@@ -41,6 +41,8 @@ public sealed class ChatSessionView
     public bool IsPending { get; set; }
     public bool HasUnreadResponse { get; set; }
     public string? SystemPrompt { get; set; }
+    public string? SelectedModelId { get; set; }
+    public string? SelectedReasoningEffort { get; set; }
     public string? LastStatus { get; set; }
     public ObservableCollection<ChatMessage> Messages { get; } = [];
     public WebView2 Browser { get; } = new();
@@ -62,6 +64,8 @@ public sealed class PersistedChatSession
     public string Title { get; set; } = "";
     public string? CopilotSessionId { get; set; }
     public string? SystemPrompt { get; set; }
+    public string? SelectedModelId { get; set; }
+    public string? SelectedReasoningEffort { get; set; }
     public bool IsSessionMissing { get; set; }
     public List<PersistedChatMessage> Messages { get; set; } = [];
 }

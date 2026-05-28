@@ -1,5 +1,6 @@
 using System.Collections.Specialized;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -34,6 +35,7 @@ public partial class MainWindow : Window
     private bool _isDarkTheme;
     private bool _showDetailMessages;
     private bool _isRestoringChats;
+    private bool _updatingModelControls;
     private System.Windows.Threading.DispatcherTimer? _themeTimer;
     private readonly object _openChatSaveGate = new();
     private readonly object _openChatWriteGate = new();
@@ -206,6 +208,7 @@ public partial class MainWindow : Window
             if (CurrentChat is { } chat)
             {
                 SetTabUnreadState(chat, false);
+                UpdateModelControlsForChat(chat);
                 _ = EnsureSelectedChatReadyAsync(chat);
             }
             SaveOpenChats();
@@ -214,24 +217,63 @@ public partial class MainWindow : Window
 
     private void ModelComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (_updatingModelControls)
+        {
+            return;
+        }
+
         if (ModelComboBox.SelectedItem is not ModelChoice model)
         {
             return;
+        }
+
+        if (CurrentChat is { IsPending: true })
+        {
+            UpdateModelControlsForChat(CurrentChat);
+            return;
+        }
+
+        if (CurrentChat is { } chat)
+        {
+            chat.SelectedModelId = model.Id;
         }
 
         _settings.SelectedModelId = model.Id;
         ReasoningComboBox.ItemsSource = model.SupportsReasoningEffort
             ? (model.ReasoningEfforts.Count > 0 ? model.ReasoningEfforts : ["low", "medium", "high", "xhigh"])
             : Array.Empty<string>();
-        ReasoningComboBox.IsEnabled = model.SupportsReasoningEffort;
-        ReasoningComboBox.SelectedItem = model.DefaultReasoningEffort ?? _settings.SelectedReasoningEffort;
+        var reasoningEffort = CurrentChat?.SelectedReasoningEffort ?? _settings.SelectedReasoningEffort ?? model.DefaultReasoningEffort;
+        ReasoningComboBox.SelectedItem = reasoningEffort;
+        if (CurrentChat is { } currentChat)
+        {
+            currentChat.SelectedReasoningEffort = ReasoningComboBox.SelectedItem?.ToString();
+        }
+        ReasoningComboBox.IsEnabled = model.SupportsReasoningEffort && CurrentChat is not { IsPending: true };
         _settingsStore.Save(_settings);
+        SaveOpenChats();
     }
 
     private void ReasoningComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (_updatingModelControls)
+        {
+            return;
+        }
+
+        if (CurrentChat is { IsPending: true })
+        {
+            UpdateModelControlsForChat(CurrentChat);
+            return;
+        }
+
+        if (CurrentChat is { } chat)
+        {
+            chat.SelectedReasoningEffort = ReasoningComboBox.SelectedItem?.ToString();
+        }
+
         _settings.SelectedReasoningEffort = ReasoningComboBox.SelectedItem?.ToString();
         _settingsStore.Save(_settings);
+        SaveOpenChats();
     }
 
     private async Task SendChatAsync(ChatSessionView chat, string prompt)
@@ -260,8 +302,8 @@ public partial class MainWindow : Window
 
         try
         {
-            var model = ModelComboBox.SelectedItem as ModelChoice;
-            await _copilot.SendAsync(chat, promptToSend, _settings, model, ReasoningComboBox.SelectedItem?.ToString());
+            var model = GetSelectedModelForChat(chat);
+            await _copilot.SendAsync(chat, promptToSend, _settings, model, chat.SelectedReasoningEffort);
             SaveOpenChats();
         }
         catch (Exception ex)
@@ -430,6 +472,10 @@ public partial class MainWindow : Window
             chat.IsPending = isPending;
             SetTabBusyIndicator(chat, isPending);
             GetTabContent(chat)?.SetState(isPending, chat.IsSessionMissing);
+            if (ReferenceEquals(chat, CurrentChat))
+            {
+                UpdateModelControlsForChat(chat);
+            }
             if (!isPending)
             {
                 SetTabUnreadState(chat, !ReferenceEquals(chat, CurrentChat));
@@ -443,8 +489,42 @@ public partial class MainWindow : Window
     {
         ModelComboBox.ItemsSource = null;
         ModelComboBox.ItemsSource = _models;
-        ModelComboBox.SelectedItem = _models.FirstOrDefault(m => m.Id == _settings.SelectedModelId) ?? _models.FirstOrDefault();
-        ModelComboBox.IsEnabled = _models.Count > 0;
+        UpdateModelControlsForChat(CurrentChat);
+    }
+
+    private void UpdateModelControlsForChat(ChatSessionView? chat)
+    {
+        _updatingModelControls = true;
+        try
+        {
+            var selectedModelId = chat?.SelectedModelId ?? _settings.SelectedModelId;
+            var model = _models.FirstOrDefault(m => m.Id == selectedModelId) ?? _models.FirstOrDefault();
+            ModelComboBox.SelectedItem = model;
+
+            var reasoningOptions = model?.SupportsReasoningEffort == true
+                ? (model.ReasoningEfforts.Count > 0 ? model.ReasoningEfforts : ["low", "medium", "high", "xhigh"])
+                : Array.Empty<string>();
+            ReasoningComboBox.ItemsSource = reasoningOptions;
+
+            var selectedReasoning = chat?.SelectedReasoningEffort ?? _settings.SelectedReasoningEffort ?? model?.DefaultReasoningEffort;
+            ReasoningComboBox.SelectedItem = reasoningOptions.Contains(selectedReasoning) ? selectedReasoning : model?.DefaultReasoningEffort;
+
+            var isBusy = chat?.IsPending == true;
+            ModelComboBox.IsEnabled = _models.Count > 0 && !isBusy;
+            ReasoningComboBox.IsEnabled = model?.SupportsReasoningEffort == true && !isBusy;
+        }
+        finally
+        {
+            _updatingModelControls = false;
+        }
+    }
+
+    private ModelChoice? GetSelectedModelForChat(ChatSessionView chat)
+    {
+        return _models.FirstOrDefault(model => model.Id == chat.SelectedModelId)
+            ?? ModelComboBox.SelectedItem as ModelChoice
+            ?? _models.FirstOrDefault(model => model.Id == _settings.SelectedModelId)
+            ?? _models.FirstOrDefault();
     }
 
     private void UseFallbackModels(string reason)
@@ -489,7 +569,9 @@ public partial class MainWindow : Window
             IsSessionMissing = persisted?.IsSessionMissing == true,
             SystemPrompt = persisted is null
                 ? (string.IsNullOrWhiteSpace(_settings.DefaultSystemPrompt) ? null : _settings.DefaultSystemPrompt)
-                : persisted.SystemPrompt
+                : persisted.SystemPrompt,
+            SelectedModelId = string.IsNullOrWhiteSpace(persisted?.SelectedModelId) ? _settings.SelectedModelId : persisted!.SelectedModelId,
+            SelectedReasoningEffort = string.IsNullOrWhiteSpace(persisted?.SelectedReasoningEffort) ? _settings.SelectedReasoningEffort : persisted!.SelectedReasoningEffort
         };
         if (persisted is not null)
         {
@@ -524,6 +606,7 @@ public partial class MainWindow : Window
         if (select)
         {
             ChatTabs.SelectedItem = tab;
+            UpdateModelControlsForChat(chat);
         }
         ChatTabs.UpdateLayout();
 
@@ -618,8 +701,8 @@ public partial class MainWindow : Window
         try
         {
             GetTabContent(chat)?.SetLoading(true, "Restoring Copilot session...");
-            var model = ModelComboBox.SelectedItem as ModelChoice;
-            await _copilot.ResumeSessionAsync(chat, _settings, model, ReasoningComboBox.SelectedItem?.ToString());
+            var model = GetSelectedModelForChat(chat);
+            await _copilot.ResumeSessionAsync(chat, _settings, model, chat.SelectedReasoningEffort);
             _resumedSessions.Add(chat);
         }
         catch (Exception ex)
@@ -866,6 +949,8 @@ public partial class MainWindow : Window
             Title = chat.Title,
             CopilotSessionId = chat.CopilotSessionId,
             SystemPrompt = chat.SystemPrompt,
+            SelectedModelId = chat.SelectedModelId,
+            SelectedReasoningEffort = chat.SelectedReasoningEffort,
             IsSessionMissing = chat.IsSessionMissing,
             Messages = chat.Messages.Select(message => new PersistedChatMessage
             {
@@ -1198,9 +1283,10 @@ public partial class MainWindow : Window
 
         if (message.Type.Equals("openFrame", StringComparison.OrdinalIgnoreCase))
         {
-            if (!string.IsNullOrWhiteSpace(message.Html))
+            var html = DecodeBridgeHtml(message);
+            if (!string.IsNullOrWhiteSpace(html))
             {
-                new IframePreviewWindow(message.Html, _isDarkTheme) { Owner = this }.Show();
+                new IframePreviewWindow(html, _isDarkTheme) { Owner = this }.Show();
             }
 
             return;
@@ -1233,18 +1319,19 @@ public partial class MainWindow : Window
                 var typeValue = type.GetString() ?? "";
                 var id = root.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
                 var html = root.TryGetProperty("html", out var htmlProp) ? htmlProp.GetString() : null;
-                return new BrowserBridgeMessage(typeValue, id, html);
+                var htmlBase64 = root.TryGetProperty("htmlBase64", out var htmlBase64Prop) ? htmlBase64Prop.GetString() : null;
+                return new BrowserBridgeMessage(typeValue, id, html, htmlBase64);
             }
 
             return root.ValueKind == JsonValueKind.String
-                ? new BrowserBridgeMessage("open", root.GetString(), null)
+                ? new BrowserBridgeMessage("open", root.GetString(), null, null)
                 : null;
         }
         catch
         {
             try
             {
-                return new BrowserBridgeMessage("open", e.TryGetWebMessageAsString(), null);
+                return new BrowserBridgeMessage("open", e.TryGetWebMessageAsString(), null, null);
             }
             catch
             {
@@ -1253,7 +1340,24 @@ public partial class MainWindow : Window
         }
     }
 
-    private sealed record BrowserBridgeMessage(string Type, string? Id, string? Html);
+    private static string? DecodeBridgeHtml(BrowserBridgeMessage message)
+    {
+        if (!string.IsNullOrWhiteSpace(message.HtmlBase64))
+        {
+            try
+            {
+                return Encoding.UTF8.GetString(Convert.FromBase64String(message.HtmlBase64));
+            }
+            catch
+            {
+                return message.Html;
+            }
+        }
+
+        return message.Html;
+    }
+
+    private sealed record BrowserBridgeMessage(string Type, string? Id, string? Html, string? HtmlBase64);
 
     private Task<PermissionPromptDecision> PromptForPermissionAsync(PermissionPrompt prompt)
     {
@@ -1303,7 +1407,14 @@ public partial class MainWindow : Window
     private void UpdateInputState()
     {
         if (CurrentChat is { } chat)
+        {
             GetTabContent(chat)?.SetState(chat.IsPending, chat.IsSessionMissing);
+            UpdateModelControlsForChat(chat);
+        }
+        else
+        {
+            UpdateModelControlsForChat(null);
+        }
     }
 
     private void RenderCurrentChat()

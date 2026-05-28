@@ -22,11 +22,7 @@ public partial class IframePreviewWindow : Window
             Browser.DefaultBackgroundColor = isDark
                 ? System.Drawing.Color.FromArgb(255, 17, 24, 39)
                 : System.Drawing.Color.White;
-
-            var wrapper = $"<!doctype html><html><head><meta charset=\"utf-8\"></head><body style=\"margin:0\">" +
-                          $"<iframe style=\"width:100%;height:100vh;border:0\" sandbox=\"allow-scripts allow-same-origin\" srcdoc=\"{System.Net.WebUtility.HtmlEncode(_html)}\"></iframe>" +
-                          "</body></html>";
-            Browser.NavigateToString(wrapper);
+            Browser.NavigateToString(_html);
         };
     }
 
