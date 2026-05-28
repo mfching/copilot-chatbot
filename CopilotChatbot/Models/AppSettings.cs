@@ -14,6 +14,8 @@ public sealed class AppSettings
     public PermissionSettings Permissions { get; set; } = new();
     public string? DefaultSystemPrompt { get; set; }
     public bool EnableDebugLogging { get; set; }
+    public bool EnableResponseBuffering { get; set; } = true;
+    public int ResponseBufferIntervalMs { get; set; } = 1000;
     public string? WorkingDirectory { get; set; }
     public ObservableCollection<string> AgentDirectories { get; set; } = [];
     public ObservableCollection<string> SkillDirectories { get; set; } = [];

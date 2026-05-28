@@ -22,14 +22,17 @@ public sealed class CopilotChatService : IAsyncDisposable
     private readonly ConcurrentDictionary<ChatSessionView, CopilotSession> _sessions = [];
     private readonly ConcurrentDictionary<string, byte> _sessionPermissionApprovals = [];
     private readonly ConcurrentQueue<ChatUpdate> _pendingChatUpdates = new();
+    private readonly ConcurrentDictionary<ChatSessionView, ResponseBufferOptions> _responseBufferOptions = [];
     private readonly Dictionary<string, McpServerConfig> _mcpServerConfigs = new();
     private int _chatUpdateFlushScheduled;
     private volatile SessionCapabilitiesSnapshot _capabilitiesSnapshot = new([], [], []);
-    private static readonly TimeSpan ChatUpdateThrottleDelay = TimeSpan.FromMilliseconds(50);
+    private const int MinResponseBufferIntervalMs = 500;
+    private const int MaxResponseBufferIntervalMs = 2000;
     public SessionCapabilitiesSnapshot CapabilitiesSnapshot => _capabilitiesSnapshot;
     public event Action<CopilotUsageStatus>? UsageUpdated;
     public event Action<ChatSessionView, bool>? SessionPendingChanged;
     public event Action<ChatSessionView, string?>? StatusChanged;
+    public event Action<ChatSessionView>? ChatUpdated;
 
     public CopilotChatService(
         SettingsStore settingsStore,
@@ -80,6 +83,7 @@ public sealed class CopilotChatService : IAsyncDisposable
 
     public async Task SendAsync(ChatSessionView chat, string prompt, AppSettings settings, ModelChoice? model, string? reasoningEffort)
     {
+        SetResponseBufferOptions(chat, settings);
         var session = await EnsureSessionAsync(chat, settings, model, reasoningEffort);
         _logger.LogBlock("USER-SEND", prompt);
         SetPending(chat, true);
@@ -157,6 +161,7 @@ public sealed class CopilotChatService : IAsyncDisposable
 
     public async Task ResumeSessionAsync(ChatSessionView chat, AppSettings settings, ModelChoice? model, string? reasoningEffort)
     {
+        SetResponseBufferOptions(chat, settings);
         if (string.IsNullOrWhiteSpace(chat.CopilotSessionId))
         {
             throw new InvalidOperationException("The saved chat does not have a Copilot session id.");
@@ -1437,7 +1442,7 @@ public sealed class CopilotChatService : IAsyncDisposable
         }
 
         _pendingChatUpdates.Enqueue(ChatUpdate.Upsert(chat, kind, content, key, append));
-        ScheduleChatUpdateFlush(ChatUpdateThrottleDelay);
+        ScheduleChatUpdateFlush(GetResponseBufferDelay(chat));
     }
 
     private void RemoveMessage(ChatSessionView chat, string key)
@@ -1448,6 +1453,12 @@ public sealed class CopilotChatService : IAsyncDisposable
 
     private void ScheduleChatUpdateFlush(TimeSpan delay)
     {
+        if (delay <= TimeSpan.Zero)
+        {
+            FlushChatUpdatesOnDispatcher();
+            return;
+        }
+
         if (Interlocked.Exchange(ref _chatUpdateFlushScheduled, 1) == 1)
         {
             return;
@@ -1471,8 +1482,11 @@ public sealed class CopilotChatService : IAsyncDisposable
 
     private void FlushPendingChatUpdatesOnUi()
     {
+        var changedChats = new HashSet<ChatSessionView>();
         while (_pendingChatUpdates.TryDequeue(out var update))
         {
+            update.Chat.IsApplyingBufferedUpdates = true;
+            changedChats.Add(update.Chat);
             if (update.IsRemove)
             {
                 var existing = update.Chat.Messages.FirstOrDefault(m => m.Id == update.Key);
@@ -1496,20 +1510,41 @@ public sealed class CopilotChatService : IAsyncDisposable
             }
             else
             {
-                var index = update.Chat.Messages.IndexOf(existingMessage);
                 existingMessage.Content = update.Append
                     ? existingMessage.Content + update.Content
                     : update.Content;
-                update.Chat.Messages.RemoveAt(index);
-                update.Chat.Messages.Insert(index, existingMessage);
             }
         }
 
-        Interlocked.Exchange(ref _chatUpdateFlushScheduled, 0);
-        if (!_pendingChatUpdates.IsEmpty)
+        foreach (var chat in changedChats)
         {
-            ScheduleChatUpdateFlush(ChatUpdateThrottleDelay);
+            chat.IsApplyingBufferedUpdates = false;
+            ChatUpdated?.Invoke(chat);
         }
+
+        Interlocked.Exchange(ref _chatUpdateFlushScheduled, 0);
+        if (_pendingChatUpdates.TryPeek(out var nextUpdate))
+        {
+            ScheduleChatUpdateFlush(GetResponseBufferDelay(nextUpdate.Chat));
+        }
+    }
+
+    private void SetResponseBufferOptions(ChatSessionView chat, AppSettings settings)
+    {
+        var interval = Math.Clamp(
+            settings.ResponseBufferIntervalMs <= 0 ? 1000 : settings.ResponseBufferIntervalMs,
+            MinResponseBufferIntervalMs,
+            MaxResponseBufferIntervalMs);
+        _responseBufferOptions[chat] = new ResponseBufferOptions(
+            settings.EnableResponseBuffering,
+            TimeSpan.FromMilliseconds(interval));
+    }
+
+    private TimeSpan GetResponseBufferDelay(ChatSessionView chat)
+    {
+        return _responseBufferOptions.TryGetValue(chat, out var options) && options.Enabled
+            ? options.Interval
+            : TimeSpan.Zero;
     }
 
     private sealed record ChatUpdate(
@@ -1526,6 +1561,8 @@ public sealed class CopilotChatService : IAsyncDisposable
         public static ChatUpdate Delete(ChatSessionView chat, string key)
             => new(chat, ChatMessageKind.System, "", key, false, true);
     }
+
+    private sealed record ResponseBufferOptions(bool Enabled, TimeSpan Interval);
 
     private void UpsertMcpServerSnapshot(string name, string status, IReadOnlyList<string>? tools = null)
     {

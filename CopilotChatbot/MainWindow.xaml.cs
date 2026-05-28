@@ -37,11 +37,6 @@ public partial class MainWindow : Window
     private bool _isRestoringChats;
     private bool _updatingModelControls;
     private System.Windows.Threading.DispatcherTimer? _themeTimer;
-    private readonly object _openChatSaveGate = new();
-    private readonly object _openChatWriteGate = new();
-    private CancellationTokenSource? _pendingOpenChatSave;
-    private Task _lastOpenChatSaveTask = Task.CompletedTask;
-    private static readonly TimeSpan OpenChatSaveIdleDelay = TimeSpan.FromMilliseconds(900);
 
     public MainWindow()
     {
@@ -53,6 +48,7 @@ public partial class MainWindow : Window
         _copilot.UsageUpdated += Copilot_UsageUpdated;
         _copilot.SessionPendingChanged += Copilot_SessionPendingChanged;
         _copilot.StatusChanged += Copilot_StatusChanged;
+        _copilot.ChatUpdated += Copilot_ChatUpdated;
         _localShortcutService = new LocalShortcutService(_copilot, _settingsStore);
         _localShortcutService.StatusChanged += LocalShortcut_StatusChanged;
         Loaded += MainWindow_Loaded;
@@ -485,6 +481,15 @@ public partial class MainWindow : Window
         });
     }
 
+    private void Copilot_ChatUpdated(ChatSessionView chat)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            RenderChat(chat);
+            SaveOpenChats();
+        });
+    }
+
     private void ApplyModelChoices()
     {
         ModelComboBox.ItemsSource = null;
@@ -814,118 +819,18 @@ public partial class MainWindow : Window
             return;
         }
 
-        var state = CaptureOpenChatState();
-        QueueOpenChatSave(state, force, reason);
-    }
-
-    private PersistedChatState CaptureOpenChatState()
-    {
         var sessions = ChatTabs.Items.OfType<TabItem>()
             .Select(tab => tab.Tag as ChatSessionView)
             .Where(chat => chat is not null)
             .Select(chat => ToPersistedSession(chat!))
             .ToList();
-
-        return new PersistedChatState
+        var state = new PersistedChatState
         {
             Sessions = sessions,
             SelectedSessionId = CurrentChat?.CopilotSessionId
         };
-    }
 
-    private void QueueOpenChatSave(PersistedChatState state, bool force, string reason)
-    {
-        CancellationTokenSource? previous;
-        lock (_openChatSaveGate)
-        {
-            previous = _pendingOpenChatSave;
-            _pendingOpenChatSave = force ? null : new CancellationTokenSource();
-        }
-
-        previous?.Cancel();
-        previous?.Dispose();
-
-        if (force)
-        {
-            SaveOpenChatStateSynchronously(state, reason, force);
-            lock (_openChatSaveGate)
-            {
-                _lastOpenChatSaveTask = Task.CompletedTask;
-            }
-            return;
-        }
-
-        CancellationTokenSource current;
-        lock (_openChatSaveGate)
-        {
-            current = _pendingOpenChatSave!;
-        }
-
-        var saveTask = Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(OpenChatSaveIdleDelay, current.Token);
-                await SaveOpenChatStateInBackgroundAsync(state, reason, force, current.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                _debugLogger.Log("CHAT-SESSION-SAVE", $"Debounced pending save | reason={reason}");
-            }
-            catch (Exception ex)
-            {
-                _debugLogger.Log("CHAT-SESSION-SAVE-ERROR", $"reason={reason} force={force} path={_chatSessionStore.StatePath}\n{ex}");
-            }
-            finally
-            {
-                lock (_openChatSaveGate)
-                {
-                    if (ReferenceEquals(_pendingOpenChatSave, current))
-                    {
-                        _pendingOpenChatSave = null;
-                    }
-                }
-
-                current.Dispose();
-            }
-        }, CancellationToken.None);
-
-        lock (_openChatSaveGate)
-        {
-            _lastOpenChatSaveTask = saveTask;
-        }
-    }
-
-    private async Task SaveOpenChatStateInBackgroundAsync(
-        PersistedChatState state,
-        string reason,
-        bool force,
-        CancellationToken cancellationToken)
-    {
-        await Task.Run(() =>
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            lock (_openChatWriteGate)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                _chatSessionStore.Save(state);
-            }
-        }, cancellationToken);
-        LogOpenChatSave(state, reason, force);
-    }
-
-    private void SaveOpenChatStateSynchronously(PersistedChatState state, string reason, bool force)
-    {
-        lock (_openChatWriteGate)
-        {
-            _chatSessionStore.Save(state);
-        }
-
-        LogOpenChatSave(state, reason, force);
-    }
-
-    private void LogOpenChatSave(PersistedChatState state, string reason, bool force)
-    {
+        _chatSessionStore.Save(state);
         _debugLogger.Log(
             "CHAT-SESSION-SAVE",
             $"Saved {state.Sessions.Count} sessions, {state.Sessions.Sum(session => session.Messages.Count)} messages | reason={reason} force={force} path={_chatSessionStore.StatePath}");
@@ -1268,6 +1173,11 @@ public partial class MainWindow : Window
     {
         if (ChatTabs.Items.OfType<TabItem>().FirstOrDefault(t => ReferenceEquals((t.Tag as ChatSessionView)?.Messages, sender))?.Tag is ChatSessionView chat)
         {
+            if (chat.IsApplyingBufferedUpdates)
+            {
+                return;
+            }
+
             RenderChat(chat);
             SaveOpenChats();
         }

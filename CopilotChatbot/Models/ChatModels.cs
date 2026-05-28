@@ -40,6 +40,7 @@ public sealed class ChatSessionView
     public bool IsPageInitialized { get; set; }
     public bool IsPending { get; set; }
     public bool HasUnreadResponse { get; set; }
+    public bool IsApplyingBufferedUpdates { get; set; }
     public string? SystemPrompt { get; set; }
     public string? SelectedModelId { get; set; }
     public string? SelectedReasoningEffort { get; set; }
