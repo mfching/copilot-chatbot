@@ -40,7 +40,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         LoadWindowIcon();
-        _settings = _settingsStore.Load();
+        _settings = LoadSettingsForStartup();
         _debugLogger.IsEnabled = _settings.EnableDebugLogging;
         _copilot = new CopilotChatService(_settingsStore, PromptForPermissionAsync, PromptForUserInputAsync, _debugLogger);
         _copilot.UsageUpdated += Copilot_UsageUpdated;
@@ -51,6 +51,45 @@ public partial class MainWindow : Window
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
         Closed += MainWindow_Closed;
+    }
+
+    private AppSettings LoadSettingsForStartup()
+    {
+        if (!_settingsStore.RequiresSettingsPassword())
+        {
+            return _settingsStore.Load();
+        }
+
+        var passwordWindow = new SettingsPasswordWindow();
+        if (passwordWindow.ShowDialog() == true)
+        {
+            try
+            {
+                _settingsStore.SetSettingsPassword(passwordWindow.Password);
+                return _settingsStore.Load();
+            }
+            catch (SettingsDecryptionException)
+            {
+                MessageBox.Show(
+                    this,
+                    "The settings password was incorrect. The application will start with blank settings for this session.",
+                    "Settings password",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+        }
+        else
+        {
+            MessageBox.Show(
+                this,
+                "Settings were not unlocked. The application will start with blank settings for this session.",
+                "Settings password",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+
+        _settingsStore.UseBlankSettingsForSession();
+        return new AppSettings();
     }
 
     private void LoadWindowIcon()

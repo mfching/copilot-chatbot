@@ -33,6 +33,11 @@ public partial class SettingsWindow : Window
         SystemPromptBox.Text = Settings.DefaultSystemPrompt ?? "";
         EnableDebugLoggingCheckBox.IsChecked = Settings.EnableDebugLogging;
         WorkingDirectoryBox.Text = Settings.WorkingDirectory ?? "";
+        if (_store.HasActiveSettingsPassword)
+        {
+            SettingsPasswordBox.Password = _store.SettingsPasswordForSession;
+            SettingsPasswordHelpText.Text = "A settings password is active from startup. Saved GitHub credentials and user secrets will use it unless you enter a new password here.";
+        }
         AgentDirsList.ItemsSource = Settings.AgentDirectories;
         SkillDirsList.ItemsSource = Settings.SkillDirectories;
         LogPathTextBlock.Text = _debugLogger.CurrentLogPath;
@@ -165,6 +170,24 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void RevealSettingsPasswordButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (SettingsPasswordTextBox.Visibility == Visibility.Collapsed)
+        {
+            SettingsPasswordTextBox.Text = SettingsPasswordBox.Password;
+            SettingsPasswordBox.Visibility = Visibility.Collapsed;
+            SettingsPasswordTextBox.Visibility = Visibility.Visible;
+            RevealSettingsPasswordIcon.Symbol = SymbolRegular.EyeOff20;
+        }
+        else
+        {
+            SettingsPasswordBox.Password = SettingsPasswordTextBox.Text;
+            SettingsPasswordTextBox.Visibility = Visibility.Collapsed;
+            SettingsPasswordBox.Visibility = Visibility.Visible;
+            RevealSettingsPasswordIcon.Symbol = SymbolRegular.Eye20;
+        }
+    }
+
     private void RevealSecretGridButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button button ||
@@ -244,6 +267,13 @@ public partial class SettingsWindow : Window
             : GitHubTokenBox.Password;
     }
 
+    private string GetSettingsPassword()
+    {
+        return SettingsPasswordTextBox.Visibility == Visibility.Visible
+            ? SettingsPasswordTextBox.Text
+            : SettingsPasswordBox.Password;
+    }
+
     private string GetSecretValue()
     {
         return SecretValueTextBox.Visibility == Visibility.Visible
@@ -253,6 +283,16 @@ public partial class SettingsWindow : Window
 
     private void Save_Click(object sender, RoutedEventArgs e)
     {
+        var settingsPassword = GetSettingsPassword();
+        if (string.IsNullOrEmpty(settingsPassword))
+        {
+            _store.ClearSettingsPassword();
+        }
+        else
+        {
+            _store.SetSettingsPassword(settingsPassword);
+        }
+
         Settings.GitHubToken = GetGitHubToken();
         Settings.WorkingDirectory = string.IsNullOrWhiteSpace(WorkingDirectoryBox.Text) ? null : WorkingDirectoryBox.Text.Trim();
         Settings.Permissions.AllowMcpByDefault = AllowMcpCheckBox.IsChecked == true;
