@@ -101,6 +101,15 @@ public sealed class CopilotChatService : IAsyncDisposable
         }
     }
 
+    public async Task UpdateSessionSettingsAsync(ChatSessionView chat, string modelId, string? reasoningEffort)
+    {
+        if (_sessions.TryGetValue(chat, out var session))
+        {
+            _logger.Log("UPDATE-SETTINGS", $"Updating session {chat.CopilotSessionId} to model={modelId} | reasoning={reasoningEffort ?? "default"}");
+            await session.SetModelAsync(modelId, reasoningEffort);
+        }
+    }
+
     public async Task AbortAsync(ChatSessionView chat)
     {
         if (_sessions.TryGetValue(chat, out var session))

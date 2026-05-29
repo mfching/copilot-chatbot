@@ -234,12 +234,39 @@ public partial class MainWindow : Window
         ReasoningComboBox.IsEnabled = model.SupportsReasoningEffort;
         ReasoningComboBox.SelectedItem = model.DefaultReasoningEffort ?? _settings.SelectedReasoningEffort;
         _settingsStore.Save(_settings);
+
+        _ = UpdateCurrentSessionSettingsAsync();
     }
 
     private void ReasoningComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         _settings.SelectedReasoningEffort = ReasoningComboBox.SelectedItem?.ToString();
         _settingsStore.Save(_settings);
+
+        _ = UpdateCurrentSessionSettingsAsync();
+    }
+
+    private async Task UpdateCurrentSessionSettingsAsync()
+    {
+        if (CurrentChat is { } chat && !chat.IsSessionMissing && !string.IsNullOrWhiteSpace(chat.CopilotSessionId))
+        {
+            if (string.IsNullOrWhiteSpace(_settings.SelectedModelId))
+            {
+                return;
+            }
+
+            try
+            {
+                await _copilot.UpdateSessionSettingsAsync(
+                    chat,
+                    _settings.SelectedModelId,
+                    _settings.SelectedReasoningEffort);
+            }
+            catch (Exception ex)
+            {
+                _debugLogger.Log("UPDATE-SESSION-SETTINGS-ERROR", ex.Message);
+            }
+        }
     }
 
     private async Task SendChatAsync(ChatSessionView chat, string prompt)
@@ -803,7 +830,16 @@ public partial class MainWindow : Window
             Text = title,
             FontWeight = tab.Tag is ChatSessionView { HasUnreadResponse: true } ? FontWeights.Bold : FontWeights.Normal,
             TextTrimming = TextTrimming.CharacterEllipsis,
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center,
+            ToolTip = title
+        };
+        titleBlock.MouseDown += (_, e) =>
+        {
+            if (e.ChangedButton == MouseButton.Left && e.ClickCount == 2)
+            {
+                e.Handled = true;
+                RenameTab(tab);
+            }
         };
         Grid.SetColumn(titleBlock, 0);
 
@@ -848,6 +884,7 @@ public partial class MainWindow : Window
             Name = "TabCloseSlot",
             Width = 22,
             Height = 22,
+            Margin = new Thickness(8, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,
             Children =
             {
@@ -861,7 +898,7 @@ public partial class MainWindow : Window
 
         var header = new Grid
         {
-            ToolTip = "Double-click to rename",
+            ToolTip = title,
             Width = 184,
             Children =
             {
@@ -875,7 +912,6 @@ public partial class MainWindow : Window
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         tab.Header = header;
         tab.MouseDoubleClick -= Tab_MouseDoubleClick;
-        tab.MouseDoubleClick += Tab_MouseDoubleClick;
         tab.ContextMenu = BuildTabContextMenu(tab);
     }
 
