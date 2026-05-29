@@ -24,6 +24,7 @@ public sealed class CopilotChatService : IAsyncDisposable
     private readonly ConcurrentQueue<ChatUpdate> _pendingChatUpdates = new();
     private readonly ConcurrentDictionary<ChatSessionView, ResponseBufferOptions> _responseBufferOptions = [];
     private readonly Dictionary<string, McpServerConfig> _mcpServerConfigs = new();
+    private readonly HashSet<string> _mcpServerNames = new(StringComparer.OrdinalIgnoreCase);
     private int _chatUpdateFlushScheduled;
     private volatile SessionCapabilitiesSnapshot _capabilitiesSnapshot = new([], [], []);
     private const int MinResponseBufferIntervalMs = 500;
@@ -394,67 +395,17 @@ public sealed class CopilotChatService : IAsyncDisposable
                 var cfg = server.Value;
                 try
                 {
-                    McpServerConfig serverConfig;
-                    if (cfg.TryGetProperty("url", out var urlProp))
-                    {
-                        var httpCfg = new McpHttpServerConfig
-                        {
-                            Url = urlProp.GetString() ?? ""
-                        };
-                        if (cfg.TryGetProperty("headers", out var headersProp))
-                            httpCfg.Headers = headersProp.EnumerateObject()
-                                .ToDictionary(h => h.Name, h => h.Value.GetString() ?? "");
-                        if (cfg.TryGetProperty("tools", out var toolsProp))
-                        {
-                            foreach (var t in toolsProp.EnumerateArray())
-                            {
-                                var toolName = t.GetString();
-                                if (!string.IsNullOrWhiteSpace(toolName))
-                                    httpCfg.Tools.Add(toolName);
-                            }
-                        }
-                        if (!httpCfg.Tools.Any())
-                            httpCfg.Tools.Add("*");
-                        serverConfig = httpCfg;
-                    }
-                    else
-                    {
-                        var stdio = new McpStdioServerConfig
-                        {
-                            Command = cfg.TryGetProperty("command", out var cmd)
-                                ? cmd.GetString() ?? ""
-                                : "",
-                        };
-                        if (cfg.TryGetProperty("args", out var argsProp))
-                            stdio.Args = argsProp.EnumerateArray()
-                                .Select(a => a.GetString() ?? "")
-                                .ToList();
-                        if (cfg.TryGetProperty("env", out var envProp))
-                            stdio.Env = envProp.EnumerateObject()
-                                .ToDictionary(e => e.Name, e => e.Value.GetString() ?? "");
-                        if (cfg.TryGetProperty("cwd", out var cwdProp))
-                            stdio.Cwd = cwdProp.GetString();
-                        if (cfg.TryGetProperty("tools", out var stdioProp))
-                        {
-                            foreach (var t in stdioProp.EnumerateArray())
-                            {
-                                var toolName = t.GetString();
-                                if (!string.IsNullOrWhiteSpace(toolName))
-                                    stdio.Tools.Add(toolName);
-                            }
-                        }
-                        if (!stdio.Tools.Any())
-                            stdio.Tools.Add("*");
-                        serverConfig = stdio;
-                    }
+                    var serverConfig = CreateMcpServerConfig(cfg);
 
-                    if (_mcpServerConfigs.ContainsKey(name))
+                    if (_mcpServerNames.Contains(name))
                     {
                         _logger.Log("MCP-CONFIG", $"Skipped MCP server '{name}' from {source} because it was already loaded.");
                         continue;
                     }
 
-                    _mcpServerConfigs[name] = serverConfig;
+                    if (serverConfig is McpServerConfig typedServerConfig)
+                        _mcpServerConfigs[name] = typedServerConfig;
+                    _mcpServerNames.Add(name);
                     await TryAddMcpServerAsync(client, name, serverConfig, source, cancellationToken);
                     _logger.Log("MCP-CONFIG", $"Loaded MCP server '{name}' from {source}");
                     UpsertMcpServerSnapshot(name, "registered");
@@ -471,6 +422,94 @@ public sealed class CopilotChatService : IAsyncDisposable
             _logger.Log("MCP-CONFIG-ERROR", $"Failed to parse MCP config from {source}: {ex.Message}");
         }
     }
+
+    private static object CreateMcpServerConfig(JsonElement cfg)
+    {
+        var type = cfg.TryGetProperty("type", out var typeProp)
+            ? typeProp.GetString()
+            : null;
+
+        return type?.ToLowerInvariant() switch
+        {
+            "http" => CreateMcpHttpServerConfig(cfg),
+            "sse" => CreateMcpSseServerConfig(cfg),
+            "stdio" => CreateMcpStdioServerConfig(cfg),
+            _ when cfg.TryGetProperty("url", out _) => CreateMcpHttpServerConfig(cfg),
+            _ => CreateMcpStdioServerConfig(cfg),
+        };
+    }
+
+    private static McpHttpServerConfig CreateMcpHttpServerConfig(JsonElement cfg)
+    {
+        var httpCfg = new McpHttpServerConfig
+        {
+            Url = cfg.TryGetProperty("url", out var urlProp)
+                ? urlProp.GetString() ?? ""
+                : ""
+        };
+        if (cfg.TryGetProperty("headers", out var headersProp))
+            httpCfg.Headers = CreateStringDictionary(headersProp);
+        if (cfg.TryGetProperty("timeout", out var timeoutProp) && timeoutProp.TryGetInt32(out var timeout))
+            httpCfg.Timeout = timeout;
+        ApplyMcpTools(cfg, httpCfg.Tools);
+        return httpCfg;
+    }
+
+    private static McpSseServerConfig CreateMcpSseServerConfig(JsonElement cfg)
+    {
+        var sseCfg = new McpSseServerConfig
+        {
+            Url = cfg.TryGetProperty("url", out var urlProp)
+                ? urlProp.GetString() ?? ""
+                : ""
+        };
+        if (cfg.TryGetProperty("headers", out var headersProp))
+            sseCfg.Headers = CreateStringDictionary(headersProp);
+        if (cfg.TryGetProperty("timeout", out var timeoutProp) && timeoutProp.TryGetInt32(out var timeout))
+            sseCfg.Timeout = timeout;
+        ApplyMcpTools(cfg, sseCfg.Tools);
+        return sseCfg;
+    }
+
+    private static McpStdioServerConfig CreateMcpStdioServerConfig(JsonElement cfg)
+    {
+        var stdio = new McpStdioServerConfig
+        {
+            Command = cfg.TryGetProperty("command", out var cmd)
+                ? cmd.GetString() ?? ""
+                : "",
+        };
+        if (cfg.TryGetProperty("args", out var argsProp))
+            stdio.Args = argsProp.EnumerateArray()
+                .Select(a => a.GetString() ?? "")
+                .ToList();
+        if (cfg.TryGetProperty("env", out var envProp))
+            stdio.Env = envProp.EnumerateObject()
+                .ToDictionary(e => e.Name, e => e.Value.GetString() ?? "");
+        if (cfg.TryGetProperty("cwd", out var cwdProp))
+            stdio.Cwd = cwdProp.GetString();
+        ApplyMcpTools(cfg, stdio.Tools);
+        return stdio;
+    }
+
+    private static void ApplyMcpTools(JsonElement cfg, IList<string> tools)
+    {
+        if (cfg.TryGetProperty("tools", out var toolsProp))
+        {
+            foreach (var t in toolsProp.EnumerateArray())
+            {
+                var toolName = t.GetString();
+                if (!string.IsNullOrWhiteSpace(toolName))
+                    tools.Add(toolName);
+            }
+        }
+        if (!tools.Any())
+            tools.Add("*");
+    }
+
+    private static Dictionary<string, string> CreateStringDictionary(JsonElement obj)
+        => obj.EnumerateObject()
+            .ToDictionary(e => e.Name, e => e.Value.GetString() ?? "");
 
     private async Task TryAddMcpServerAsync(
         CopilotClient client,
@@ -1527,6 +1566,24 @@ public sealed class CopilotChatService : IAsyncDisposable
         {
             ScheduleChatUpdateFlush(GetResponseBufferDelay(nextUpdate.Chat));
         }
+    }
+
+    private sealed class McpSseServerConfig
+    {
+        [JsonPropertyName("type")]
+        public string Type => "sse";
+
+        [JsonPropertyName("url")]
+        public string Url { get; set; } = string.Empty;
+
+        [JsonPropertyName("headers")]
+        public IDictionary<string, string>? Headers { get; set; }
+
+        [JsonPropertyName("tools")]
+        public IList<string> Tools { get; } = [];
+
+        [JsonPropertyName("timeout")]
+        public int? Timeout { get; set; }
     }
 
     private void SetResponseBufferOptions(ChatSessionView chat, AppSettings settings)
