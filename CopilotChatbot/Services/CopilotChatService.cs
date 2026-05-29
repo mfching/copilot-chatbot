@@ -228,6 +228,147 @@ public sealed class CopilotChatService : IAsyncDisposable
         return (_lastUsage, null);
     }
 
+    /// <summary>
+    /// Finds an open chat tab by title. Returns null if not found or session not started.
+    /// </summary>
+    public ChatSessionView? FindLiveChatByTitle(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return null;
+        return _sessions.Keys.FirstOrDefault(c =>
+            string.Equals(c.Title, title, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Runs one Copilot turn for a scheduled task. If <paramref name="boundChat"/> has a live session,
+    /// it reuses that session (messages are visible in the chat tab). Otherwise creates a hidden one-shot
+    /// session using the supplied system prompt / model / reasoning settings.
+    /// Returns the assistant's final message text, or null on timeout/error.
+    /// </summary>
+    public async Task<(string? Response, string? Error)> RunTaskTurnAsync(
+        Models.TaskCopilotSpec spec,
+        ChatSessionView? boundChat,
+        string? previousOutput,
+        AppSettings settings,
+        CancellationToken cancellationToken = default)
+    {
+        var fullPrompt = spec.AppendPreviousOutput && !string.IsNullOrWhiteSpace(previousOutput)
+            ? spec.Prompt + "\n\n" + previousOutput
+            : spec.Prompt;
+
+        var timeout = TimeSpan.FromSeconds(spec.TimeoutSeconds > 0 ? spec.TimeoutSeconds : 300);
+
+        if (boundChat is not null && _sessions.TryGetValue(boundChat, out var liveSession))
+        {
+            return await RunBoundTurnAsync(liveSession, boundChat, spec, fullPrompt, settings, timeout, cancellationToken);
+        }
+
+        return await RunHiddenTurnAsync(spec, fullPrompt, settings, timeout, cancellationToken);
+    }
+
+    private async Task<(string? Response, string? Error)> RunBoundTurnAsync(
+        CopilotSession session,
+        ChatSessionView chat,
+        Models.TaskCopilotSpec spec,
+        string fullPrompt,
+        AppSettings settings,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var subscription = session.On(evt =>
+        {
+            if (evt is AssistantMessageEvent msg && !string.IsNullOrWhiteSpace(msg.Data.Content))
+            {
+                tcs.TrySetResult(msg.Data.Content);
+            }
+        });
+
+        try
+        {
+            var model = !string.IsNullOrWhiteSpace(spec.ModelId)
+                ? new ModelChoice { Id = spec.ModelId!, Name = spec.ModelId! }
+                : null;
+            await SendAsync(chat, fullPrompt, settings, model, spec.ReasoningEffort);
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(timeout);
+            var response = await tcs.Task.WaitAsync(cts.Token);
+            return (response, null);
+        }
+        catch (OperationCanceledException)
+        {
+            return (null, "Timed out waiting for Copilot response.");
+        }
+        catch (Exception ex)
+        {
+            _logger.Log("TASK-COPILOT-ERROR", ex.ToString());
+            return (null, ex.Message);
+        }
+        finally
+        {
+            (subscription as IDisposable)?.Dispose();
+        }
+    }
+
+    private async Task<(string? Response, string? Error)> RunHiddenTurnAsync(
+        Models.TaskCopilotSpec spec,
+        string fullPrompt,
+        AppSettings settings,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        CopilotSession? probe = null;
+        try
+        {
+            var client = await EnsureClientAsync(settings, cancellationToken);
+            var token = await ResolveGitHubTokenAsync(settings.GitHubToken);
+            probe = await client.CreateSessionAsync(new SessionConfig
+            {
+                Model = !string.IsNullOrWhiteSpace(spec.ModelId) ? spec.ModelId : settings.SelectedModelId,
+                ReasoningEffort = string.IsNullOrWhiteSpace(spec.ReasoningEffort) ? null : spec.ReasoningEffort,
+                GitHubToken = token,
+                Streaming = true,
+                SystemMessage = string.IsNullOrWhiteSpace(spec.SystemPrompt) ? null : new SystemMessageConfig { Content = spec.SystemPrompt },
+                OnPermissionRequest = PermissionHandler.ApproveAll
+            });
+
+            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            probe.On(evt =>
+            {
+                if (evt is AssistantMessageEvent msg && !string.IsNullOrWhiteSpace(msg.Data.Content))
+                {
+                    tcs.TrySetResult(msg.Data.Content);
+                }
+            });
+
+            await probe.SendAsync(new MessageOptions { Prompt = fullPrompt });
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(timeout);
+            try
+            {
+                var response = await tcs.Task.WaitAsync(cts.Token);
+                return (response, null);
+            }
+            catch (OperationCanceledException)
+            {
+                return (null, "Timed out waiting for Copilot response.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Log("TASK-COPILOT-HIDDEN-ERROR", ex.ToString());
+            return (null, ex.Message);
+        }
+        finally
+        {
+            if (probe is not null)
+            {
+                try { await probe.DisposeAsync(); } catch { }
+            }
+        }
+    }
+
     public async Task ResumeSessionAsync(ChatSessionView chat, AppSettings settings, ModelChoice? model, string? reasoningEffort)
     {
         SetResponseBufferOptions(chat, settings);

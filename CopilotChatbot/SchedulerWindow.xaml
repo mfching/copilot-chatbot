@@ -1,0 +1,537 @@
+<Window x:Class="CopilotChatbot.SchedulerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="Scheduled Tasks" Height="820" Width="1200"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource PageBrush}">
+    <Window.Resources>
+        <Style x:Key="CardBorder" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrushModern}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="12" />
+        </Style>
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,6,0,3" />
+        </Style>
+        <Style x:Key="Hint" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,2,0,4" />
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="Background" Value="{DynamicResource ControlBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrushModern}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <!--  ComboBox and ComboBoxItem: inherit App.xaml's full ControlTemplate (same as MainWindow)  -->
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style TargetType="Expander">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrushModern}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10" />
+            <Setter Property="Margin" Value="0,6,0,0" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <!-- ── Neutral button — matches MainWindow ToolbarButton ── -->
+        <Style x:Key="Btn" TargetType="Button">
+            <Setter Property="Padding" Value="12,6" />
+            <Setter Property="Background" Value="{DynamicResource ControlBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrushModern}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="9">
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource ControlHoverBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#B8C2CC" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource DisabledControlBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource DisabledBorderBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource DisabledTextBrush}" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ── Accent (blue) button — matches MainWindow PrimaryToolbarButton ── -->
+        <Style x:Key="AccentBtn" TargetType="Button">
+            <Setter Property="Padding" Value="12,6" />
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="#FFFFFF" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="9">
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#0856B3" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#0856B3" />
+                                <Setter Property="Foreground" Value="#FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#0648A0" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#0648A0" />
+                                <Setter Property="Foreground" Value="#FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource DisabledControlBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource DisabledBorderBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource DisabledTextBrush}" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ── Graphical browse icon button ── -->
+        <Style x:Key="BrowseIconBtn" TargetType="Button">
+            <Setter Property="Width" Value="34" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="4,0,0,0" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+            <Setter Property="Background" Value="{DynamicResource ControlBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrushModern}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="7">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource ControlHoverBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#B8C2CC" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ── Small pill chip for cron quick-pick shortcuts ── -->
+        <Style x:Key="CronChipBtn" TargetType="Button">
+            <Setter Property="Padding" Value="8,3" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Margin" Value="0,0,4,4" />
+            <Setter Property="MinHeight" Value="22" />
+            <Setter Property="Background" Value="{DynamicResource ControlBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrushModern}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="11">
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource AccentBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                <Setter Property="Foreground" Value="#FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ── Inline icon button for task list rows ── -->
+        <Style x:Key="IconListBtn" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="5,3" />
+            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="14">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="360" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ── Task list ──────────────────────────────────────────── -->
+        <Border Style="{StaticResource CardBorder}" Margin="0,0,8,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock Text="Tasks" FontSize="16" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextBrush}" />
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,8">
+                    <Button x:Name="NewButton" Content="+ New task" Style="{StaticResource AccentBtn}" Click="NewButton_Click" />
+                </StackPanel>
+                <ListBox x:Name="TasksList" Grid.Row="2"
+                         Background="{DynamicResource ControlBrush}"
+                         BorderBrush="{DynamicResource BorderBrushModern}"
+                         Foreground="{DynamicResource TextBrush}"
+                         HorizontalContentAlignment="Stretch"
+                         SelectionChanged="TasksList_SelectionChanged">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="2,3">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextBrush}" />
+                                    <TextBlock Text="{Binding CronExpression, TargetNullValue='(manual only)'}"
+                                               Foreground="{DynamicResource MutedTextBrush}" FontSize="11" />
+                                </StackPanel>
+                                <!-- Per-row clone + delete buttons (req 8) -->
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Style="{StaticResource IconListBtn}" ToolTip="Duplicate this task"
+                                            Click="TaskCloneButton_Click">
+                                        <ui:SymbolIcon Symbol="Copy20" FontSize="14"
+                                                       Foreground="{DynamicResource MutedTextBrush}" />
+                                    </Button>
+                                    <Button Style="{StaticResource IconListBtn}" ToolTip="Delete this task"
+                                            Margin="2,0,0,0" Click="TaskDeleteButton_Click">
+                                        <ui:SymbolIcon Symbol="Dismiss20" FontSize="14"
+                                                       Foreground="{DynamicResource MutedTextBrush}" />
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Border>
+
+        <!-- ── Detail editor ─────────────────────────────────────── -->
+        <Border Grid.Column="1" Style="{StaticResource CardBorder}" Margin="6,0,0,0">
+            <Grid x:Name="EditorPanel">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- Toolbar -->
+                <StackPanel Orientation="Horizontal">
+                    <Button x:Name="RunNowButton" Content="Run Now" Style="{StaticResource AccentBtn}" Click="RunNowButton_Click" />
+                    <Button x:Name="HistoryButton" Content="View History" Style="{StaticResource Btn}" Click="HistoryButton_Click" Margin="8,0,0,0" />
+                    <TextBlock x:Name="StatusText" VerticalAlignment="Center" Margin="14,0,0,0"
+                               Foreground="{DynamicResource MutedTextBrush}" />
+                </StackPanel>
+
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,10,0,0">
+                    <StackPanel x:Name="DetailStack">
+
+                        <!-- ── General ──────────────────────────────── -->
+                        <TextBlock Style="{StaticResource FieldLabel}" Text="Name" />
+                        <TextBox x:Name="NameBox" />
+
+                        <Grid Margin="0,6,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <CheckBox x:Name="EnabledCheck" Content="Enabled" VerticalAlignment="Top" Margin="0,28,0,0" />
+                            <StackPanel Grid.Column="1" Margin="20,0,0,0">
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Cron expression" />
+                                <TextBox x:Name="CronBox" />
+                                <!-- Hint + validation (req 1) -->
+                                <TextBlock Style="{StaticResource Hint}"
+                                           Text="Format: minute  hour  day-of-month  month  day-of-week (5 fields, 0-based)&#x0a;Examples:  &#x22;0 9 * * 1-5&#x22; = weekdays at 09:00  |  &#x22;*/15 * * * *&#x22; = every 15 min  |  &#x22;0 0 1 * *&#x22; = 1st of each month" />
+                                <TextBlock x:Name="CronValidation" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,2" />
+                                <TextBlock x:Name="NextRunsText" Style="{StaticResource Hint}" />
+                                <!-- Cron quick-pick shortcuts -->
+                                <WrapPanel Margin="0,4,0,0">
+                                    <Button Style="{StaticResource CronChipBtn}" Tag="0 * * * *"    Content="Every hour"        Click="CronShortcut_Click" ToolTip="0 * * * *" />
+                                    <Button Style="{StaticResource CronChipBtn}" Tag="0 * * * 1-5"  Content="Hourly (weekdays)" Click="CronShortcut_Click" ToolTip="0 * * * 1-5" />
+                                    <Button Style="{StaticResource CronChipBtn}" Tag="0 9 * * *"    Content="9am daily"         Click="CronShortcut_Click" ToolTip="0 9 * * *" />
+                                    <Button Style="{StaticResource CronChipBtn}" Tag="0 9 * * 1-5"  Content="9am weekdays"      Click="CronShortcut_Click" ToolTip="0 9 * * 1-5" />
+                                    <Button Style="{StaticResource CronChipBtn}" Tag="*/15 * * * *" Content="Every 15 min"      Click="CronShortcut_Click" ToolTip="*/15 * * * *" />
+                                    <Button Style="{StaticResource CronChipBtn}" Tag="0 0 * * *"    Content="Midnight daily"    Click="CronShortcut_Click" ToolTip="0 0 * * *" />
+                                </WrapPanel>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- ── Pre-command ──────────────────────────── -->
+                        <Expander Header="Pre-command" x:Name="PreExpander">
+                            <StackPanel Margin="0,6,0,0">
+                                <CheckBox x:Name="PreEnabled" Content="Run a command before Copilot" />
+
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Executable" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="PreExe" />
+                                    <Button Grid.Column="1" Style="{StaticResource BrowseIconBtn}"
+                                            Click="PreExeBrowse_Click" ToolTip="Browse for executable">
+                                        <ui:SymbolIcon Symbol="Document20" FontSize="14" />
+                                    </Button>
+                                </Grid>
+
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Arguments" />
+                                <TextBox x:Name="PreArgs" />
+
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Working directory" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="PreCwd" />
+                                    <Button Grid.Column="1" Style="{StaticResource BrowseIconBtn}"
+                                            Click="PreCwdBrowse_Click" ToolTip="Browse for folder">
+                                        <ui:SymbolIcon Symbol="FolderOpen20" FontSize="14" />
+                                    </Button>
+                                </Grid>
+
+                                <Grid Margin="0,4,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="120" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Style="{StaticResource FieldLabel}" Text="Stdin source" />
+                                        <!-- Themed ComboBox (req 2) -->
+                                        <ComboBox x:Name="PreStdin" SelectedIndex="0">
+                                            <ComboBoxItem Content="None" />
+                                            <ComboBoxItem Content="Literal" />
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                                        <TextBlock Style="{StaticResource FieldLabel}" Text="Timeout (s)" />
+                                        <TextBox x:Name="PreTimeout" Text="120" />
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Stdin literal (if selected)" />
+                                <TextBox x:Name="PreStdinLiteral" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="50" />
+                            </StackPanel>
+                        </Expander>
+
+                        <!-- ── Copilot turn ─────────────────────────── -->
+                        <Expander Header="Copilot turn" x:Name="CopilotExpander">
+                            <StackPanel Margin="0,6,0,0">
+                                <CheckBox x:Name="CopilotEnabled" Content="Send a prompt to Copilot" />
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Chat tab name (empty = hidden one-shot session)" />
+                                <TextBox x:Name="CopTab" />
+
+                                <!-- Model + Reasoning dropdowns (req 3) -->
+                                <Grid Margin="0,4,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="180" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Style="{StaticResource FieldLabel}" Text="Model (optional)" />
+                                        <ComboBox x:Name="CopModel" DisplayMemberPath="DisplayName"
+                                                  SelectionChanged="CopModel_SelectionChanged" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                                        <TextBlock Style="{StaticResource FieldLabel}" Text="Reasoning effort (optional)" />
+                                        <ComboBox x:Name="CopReasoning" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="System prompt" />
+                                <TextBox x:Name="CopSystem" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" FontWeight="Normal" />
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Prompt" />
+                                <TextBox x:Name="CopPrompt" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" FontWeight="Normal" />
+                                <CheckBox x:Name="CopAppendPrev" Content="Append pre-command output to prompt" Margin="0,6,0,0" />
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Timeout (s)" />
+                                <TextBox x:Name="CopTimeout" Text="300" />
+                            </StackPanel>
+                        </Expander>
+
+                        <!-- ── Post-command ─────────────────────────── -->
+                        <Expander Header="Post-command" x:Name="PostExpander">
+                            <StackPanel Margin="0,6,0,0">
+                                <CheckBox x:Name="PostEnabled" Content="Run a command after Copilot" />
+                                <TextBlock Style="{StaticResource Hint}"
+                                           Text="Placeholders: {{copilot_response}}, {{copilot_response_file}}, {{pre_output}}, {{task_name}}, {{run_id}}, {{timestamp}}" />
+
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Executable" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="PostExe" />
+                                    <Button Grid.Column="1" Style="{StaticResource BrowseIconBtn}"
+                                            Click="PostExeBrowse_Click" ToolTip="Browse for executable">
+                                        <ui:SymbolIcon Symbol="Document20" FontSize="14" />
+                                    </Button>
+                                </Grid>
+
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Arguments" />
+                                <TextBox x:Name="PostArgs" />
+
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Working directory" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="PostCwd" />
+                                    <Button Grid.Column="1" Style="{StaticResource BrowseIconBtn}"
+                                            Click="PostCwdBrowse_Click" ToolTip="Browse for folder">
+                                        <ui:SymbolIcon Symbol="FolderOpen20" FontSize="14" />
+                                    </Button>
+                                </Grid>
+
+                                <Grid Margin="0,4,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="120" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Style="{StaticResource FieldLabel}" Text="Stdin source" />
+                                        <!-- Themed ComboBox (req 2) -->
+                                        <ComboBox x:Name="PostStdin" SelectedIndex="0">
+                                            <ComboBoxItem Content="None" />
+                                            <ComboBoxItem Content="CopilotResponse" />
+                                            <ComboBoxItem Content="PreviousOutput" />
+                                            <ComboBoxItem Content="Literal" />
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                                        <TextBlock Style="{StaticResource FieldLabel}" Text="Timeout (s)" />
+                                        <TextBox x:Name="PostTimeout" Text="120" />
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Stdin literal (if selected)" />
+                                <TextBox x:Name="PostStdinLiteral" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="50" />
+                            </StackPanel>
+                        </Expander>
+
+                        <!-- ── External handoff ─────────────────────── -->
+                        <Expander Header="External handoff" x:Name="HandoffExpander">
+                            <StackPanel Margin="0,6,0,0">
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Kind" />
+                                <!-- Themed ComboBox (req 6) -->
+                                <ComboBox x:Name="HandoffKind" SelectedIndex="0" SelectionChanged="HandoffKind_SelectionChanged">
+                                    <ComboBoxItem Content="None" />
+                                    <ComboBoxItem Content="File" />
+                                    <ComboBoxItem Content="HTTP" />
+                                    <ComboBoxItem Content="NamedPipe" />
+                                </ComboBox>
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Target (file path / URL / pipe name)" />
+                                <TextBox x:Name="HandoffTarget" />
+                                <CheckBox x:Name="HandoffAppend" Content="Append (File only)" Margin="0,6,0,0" />
+                                <!-- HTTP method dropdown (req 7) -->
+                                <Grid Margin="0,4,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="160" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Style="{StaticResource FieldLabel}" Text="HTTP method" />
+                                        <ComboBox x:Name="HandoffMethod" IsEditable="True" Text="POST">
+                                            <ComboBoxItem Content="GET" />
+                                            <ComboBoxItem Content="POST" />
+                                            <ComboBoxItem Content="PUT" />
+                                            <ComboBoxItem Content="PATCH" />
+                                            <ComboBoxItem Content="DELETE" />
+                                            <ComboBoxItem Content="HEAD" />
+                                            <ComboBoxItem Content="OPTIONS" />
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Style="{StaticResource Hint}"
+                                               Text="(editable — type any custom method)"
+                                               VerticalAlignment="Bottom" Margin="10,0,0,4" />
+                                </Grid>
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Body template" />
+                                <TextBlock Style="{StaticResource Hint}" Text="Empty = raw Copilot response. Use {{copilot_response}}, {{pre_output}}, {{task_name}} for task placeholders, or ${ENV_VAR} to inject environment variables at runtime." />
+                                <TextBox x:Name="HandoffBody" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" FontWeight="Normal" />
+                            </StackPanel>
+                        </Expander>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+                    <Button x:Name="SaveButton" Content="Save changes" Style="{StaticResource AccentBtn}" Click="SaveButton_Click" />
+                    <Button x:Name="CloseButton" Content="Close" Style="{StaticResource Btn}" Click="CloseButton_Click" Margin="8,0,0,0" />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

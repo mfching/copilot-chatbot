@@ -630,6 +630,16 @@
                             Symbol="PlugConnected20" />
                     </Button>
                     <Button
+                        x:Name="SchedulerButton"
+                        Click="SchedulerButton_Click"
+                        Style="{StaticResource IconButton}"
+                        ToolTip="Scheduled tasks">
+                        <ui:SymbolIcon
+                            FontSize="18"
+                            Foreground="{DynamicResource TextBrush}"
+                            Symbol="CalendarClock24" />
+                    </Button>
+                    <Button
                         x:Name="SettingsButton"
                         Margin="0"
                         Click="SettingsButton_Click"

@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private readonly DebugLogger _debugLogger = new();
     private readonly CopilotChatService _copilot;
     private readonly ILocalShortcutService _localShortcutService;
+    private readonly TaskSchedulerService _taskScheduler;
     private readonly List<ModelChoice> _models = [];
     private readonly Dictionary<ChatSessionView, long> _renderRevisions = [];
     private readonly Dictionary<ChatSessionView, ChatTabContent> _tabContents = [];
@@ -49,6 +50,12 @@ public partial class MainWindow : Window
         _copilot.ChatUpdated += Copilot_ChatUpdated;
         _localShortcutService = new LocalShortcutService(_copilot, _settingsStore);
         _localShortcutService.StatusChanged += LocalShortcut_StatusChanged;
+        _taskScheduler = new TaskSchedulerService(
+            _copilot, _settingsStore, _debugLogger,
+            () => _settings,
+            title => ChatTabs.Items.OfType<TabItem>()
+                .Select(t => t.Tag as ChatSessionView)
+                .FirstOrDefault(c => c is not null && string.Equals(c.Title, title, StringComparison.OrdinalIgnoreCase)));
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
         Closed += MainWindow_Closed;
@@ -171,6 +178,11 @@ public partial class MainWindow : Window
         var snapshot = await _copilot.GetCapabilitiesSnapshotAsync(CurrentChat);
         var window = new SessionInfoWindow(snapshot, this);
         window.Show();
+    }
+
+    private void SchedulerButton_Click(object sender, RoutedEventArgs e)
+    {
+        new SchedulerWindow(_taskScheduler, _models) { Owner = this }.Show();
     }
 
     private void SessionPromptButton_Click(object sender, RoutedEventArgs e)
