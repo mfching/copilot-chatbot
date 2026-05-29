@@ -240,6 +240,7 @@ public partial class MainWindow : Window
         {
             if (string.IsNullOrWhiteSpace(shortcutResult.PromptToSend))
             {
+                chat.Messages.Add(new ChatMessage { Kind = ChatMessageKind.User, Content = prompt });
                 AddLocalShortcutMessage(chat, shortcutResult.Kind, shortcutResult.Content);
                 return;
             }

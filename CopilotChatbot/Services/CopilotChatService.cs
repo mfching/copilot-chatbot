@@ -27,9 +27,11 @@ public sealed class CopilotChatService : IAsyncDisposable
     private readonly HashSet<string> _mcpServerNames = new(StringComparer.OrdinalIgnoreCase);
     private int _chatUpdateFlushScheduled;
     private volatile SessionCapabilitiesSnapshot _capabilitiesSnapshot = new([], [], []);
+    private volatile CopilotUsageStatus? _lastUsage;
     private const int MinResponseBufferIntervalMs = 500;
     private const int MaxResponseBufferIntervalMs = 2000;
     public SessionCapabilitiesSnapshot CapabilitiesSnapshot => _capabilitiesSnapshot;
+    public CopilotUsageStatus? LastUsage => _lastUsage;
     public event Action<CopilotUsageStatus>? UsageUpdated;
     public event Action<ChatSessionView, bool>? SessionPendingChanged;
     public event Action<ChatSessionView, string?>? StatusChanged;
@@ -158,6 +160,72 @@ public sealed class CopilotChatService : IAsyncDisposable
                 // Closing a tab should not fail if the CLI already dropped the session.
             }
         }
+    }
+
+    /// <summary>
+    /// Returns the most recently cached usage status, or fetches it by sending a minimal
+    /// probe to a temporary session that is invisible to the user's chat.
+    /// Returns (status, errorMessage) — errorMessage is non-null when the probe failed.
+    /// </summary>
+    public async Task<(CopilotUsageStatus? Status, string? Error)> FetchUsageAsync(AppSettings settings, CancellationToken cancellationToken = default)
+    {
+        if (_lastUsage is not null)
+            return (_lastUsage, null);
+
+        CopilotSession? probe = null;
+        try
+        {
+            var client = await EnsureClientAsync(settings, cancellationToken);
+            var token = await ResolveGitHubTokenAsync(settings.GitHubToken);
+            probe = await client.CreateSessionAsync(new SessionConfig
+            {
+                Model = settings.SelectedModelId,
+                GitHubToken = token,
+                Streaming = true,
+                OnPermissionRequest = PermissionHandler.ApproveAll
+            });
+
+            var tcs = new TaskCompletionSource<CopilotUsageStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
+            probe.On(evt =>
+            {
+                _logger.Log("FETCH-USAGE-EVENT", evt.GetType().Name);
+                if (evt is AssistantUsageEvent usage)
+                {
+                    var status = ToUsageStatus(usage.Data);
+                    _lastUsage = status;
+                    UsageUpdated?.Invoke(status);
+                    tcs.TrySetResult(status);
+                }
+            });
+
+            _logger.Log("FETCH-USAGE", "Sending probe message...");
+            await probe.SendAsync(new MessageOptions { Prompt = "ok" });
+            _logger.Log("FETCH-USAGE", $"SendAsync returned. TCS completed: {tcs.Task.IsCompleted}");
+
+            if (!tcs.Task.IsCompleted)
+            {
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(10));
+                try { await tcs.Task.WaitAsync(timeoutCts.Token); }
+                catch (OperationCanceledException) { }
+            }
+
+            _logger.Log("FETCH-USAGE", $"Done. _lastUsage is {(_lastUsage is null ? "null" : _lastUsage.Model)}");
+        }
+        catch (Exception ex)
+        {
+            _logger.Log("FETCH-USAGE-ERROR", ex.ToString());
+            return (_lastUsage, ex.Message);
+        }
+        finally
+        {
+            if (probe is not null)
+            {
+                try { await probe.DisposeAsync(); } catch { }
+            }
+        }
+
+        return (_lastUsage, null);
     }
 
     public async Task ResumeSessionAsync(ChatSessionView chat, AppSettings settings, ModelChoice? model, string? reasoningEffort)
@@ -432,7 +500,8 @@ public sealed class CopilotChatService : IAsyncDisposable
         return type?.ToLowerInvariant() switch
         {
             "http" => CreateMcpHttpServerConfig(cfg),
-            "sse" => CreateMcpSseServerConfig(cfg),
+            //"sse" => CreateMcpSseServerConfig(cfg),
+            "sse" => CreateMcpHttpServerConfig(cfg),
             "stdio" => CreateMcpStdioServerConfig(cfg),
             _ when cfg.TryGetProperty("url", out _) => CreateMcpHttpServerConfig(cfg),
             _ => CreateMcpStdioServerConfig(cfg),
@@ -1398,8 +1467,10 @@ public sealed class CopilotChatService : IAsyncDisposable
                 SetPending(chat, false);
                 break;
             case AssistantUsageEvent usage:
-                _logger.Log("USAGE", ToUsageStatus(usage.Data).ToStatusText());
-                UsageUpdated?.Invoke(ToUsageStatus(usage.Data));
+                var usageStatus = ToUsageStatus(usage.Data);
+                _lastUsage = usageStatus;
+                _logger.Log("USAGE", usageStatus.ToStatusText());
+                UsageUpdated?.Invoke(usageStatus);
                 break;
         }
     }
