@@ -106,6 +106,7 @@ Shortcuts are handled locally by the app and are not sent as chat prompts.
 - `/memory` - show the current long-term memory permission state.
 - `/memory on` - approve memory permission requests automatically across sessions.
 - `/memory off` - reject memory permission requests automatically across sessions.
+- `/usage` - show the latest Copilot usage and quota snapshot (tokens, requests, remaining, reset date).
 
 ## Configuration and Data Files
 

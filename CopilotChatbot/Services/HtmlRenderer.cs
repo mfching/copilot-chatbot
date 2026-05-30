@@ -72,6 +72,10 @@ public sealed class HtmlRenderer
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin:0; padding:0; background:var(--bg); color:var(--text); font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
 main { padding:10px 14px; }
+.history-save-btn { position:fixed; top:12px; right:16px; z-index:20; width:32px; height:32px; border:1px solid var(--border); border-radius:50%; background:var(--card); color:var(--icon-dim); cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 10px rgba(0,0,0,.18); opacity:.86; }
+.history-save-btn:hover { color:var(--icon-hover); background:var(--btn-bg); opacity:1; }
+.history-save-btn:active { transform:translateY(1px); }
+main.streaming + .history-save-btn { display:none; }
 .msg { margin:0 0 7px 0; border:1px solid var(--border); border-radius:8px; background:var(--card); overflow:hidden; box-shadow:0 1px 2px rgba(0,0,0,.07); }
 .turn-responses { padding:0 8px 8px 8px; }
 .turn-responses .msg { margin:7px 0 0 0; box-shadow:none; }
@@ -144,7 +148,15 @@ main.streaming .open-btn { pointer-events:none; color:var(--icon-dim); opacity:.
 </style>
 </head>
 <body><main>{{messagesHtml}}</main>
+<button class="history-save-btn" title="Export chat history" aria-label="Export chat history" data-save-history="1"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2.5h8l2 2V13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2.5Z"/><path d="M5 2.5V6h6V2.5"/><path d="M5 14v-4h6v4"/></svg></button>
 <script>
+document.addEventListener('click', e => {
+  const button = e.target.closest('[data-save-history]');
+  if (!button) return;
+  e.preventDefault();
+  e.stopPropagation();
+  chrome.webview.postMessage({ type: 'saveHistory' });
+});
 document.addEventListener('click', e => {
   const button = e.target.closest('[data-open-id]');
   if (!button) return;

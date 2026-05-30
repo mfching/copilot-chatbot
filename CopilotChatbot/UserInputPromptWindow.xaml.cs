@@ -14,6 +14,7 @@ public partial class UserInputPromptWindow : Window
     public UserInputPromptWindow(UserInputPrompt prompt)
     {
         InitializeComponent();
+        Title = FormatDialogTitle(prompt.SessionTitle, "Copilot Question");
         _allowFreeform = prompt.AllowFreeform;
         QuestionTextBlock.Text = prompt.Question;
         ChoicesListBox.ItemsSource = prompt.Choices;
@@ -39,6 +40,11 @@ public partial class UserInputPromptWindow : Window
             }
         };
     }
+
+    private static string FormatDialogTitle(string? sessionTitle, string dialogTitle) =>
+        string.IsNullOrWhiteSpace(sessionTitle)
+            ? dialogTitle
+            : $"{sessionTitle} - {dialogTitle}";
 
     private void UseSelected_Click(object sender, RoutedEventArgs e) => UseSelectedChoice();
 

@@ -19,6 +19,7 @@ public sealed class AppSettings
     public string? WorkingDirectory { get; set; }
     public ObservableCollection<string> AgentDirectories { get; set; } = [];
     public ObservableCollection<string> SkillDirectories { get; set; } = [];
+    public ObservableCollection<ScheduledTask> ScheduledTasks { get; set; } = [];
 }
 
 public sealed class UserSecretSetting

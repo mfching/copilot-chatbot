@@ -1,4 +1,5 @@
 using System.Collections.Specialized;
+using System.Text;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -11,7 +12,10 @@ using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using CopilotChatbot.Models;
 using CopilotChatbot.Services;
+using Microsoft.Win32;
 using Microsoft.Web.WebView2.Core;
+using IOFile = System.IO.File;
+using IOPath = System.IO.Path;
 using SymbolRegular = Wpf.Ui.Controls.SymbolRegular;
 
 
@@ -25,6 +29,7 @@ public partial class MainWindow : Window
     private readonly DebugLogger _debugLogger = new();
     private readonly CopilotChatService _copilot;
     private readonly ILocalShortcutService _localShortcutService;
+    private readonly TaskSchedulerService _taskScheduler;
     private readonly List<ModelChoice> _models = [];
     private readonly Dictionary<ChatSessionView, long> _renderRevisions = [];
     private readonly Dictionary<ChatSessionView, ChatTabContent> _tabContents = [];
@@ -51,6 +56,12 @@ public partial class MainWindow : Window
         _copilot.ChatUpdated += Copilot_ChatUpdated;
         _localShortcutService = new LocalShortcutService(_copilot, _settingsStore);
         _localShortcutService.StatusChanged += LocalShortcut_StatusChanged;
+        _taskScheduler = new TaskSchedulerService(
+            _copilot, _settingsStore, _debugLogger,
+            () => _settings,
+            title => ChatTabs.Items.OfType<TabItem>()
+                .Select(t => t.Tag as ChatSessionView)
+                .FirstOrDefault(c => c is not null && string.Equals(c.Title, title, StringComparison.OrdinalIgnoreCase)));
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
         Closed += MainWindow_Closed;
@@ -175,6 +186,11 @@ public partial class MainWindow : Window
         window.Show();
     }
 
+    private void SchedulerButton_Click(object sender, RoutedEventArgs e)
+    {
+        new SchedulerWindow(_taskScheduler, _models) { Owner = this }.Show();
+    }
+
     private void SessionPromptButton_Click(object sender, RoutedEventArgs e)
     {
         if (CurrentChat is not { } chat) return;
@@ -246,7 +262,8 @@ public partial class MainWindow : Window
         }
         ReasoningComboBox.IsEnabled = model.SupportsReasoningEffort && CurrentChat is not { IsPending: true };
         _settingsStore.Save(_settings);
-        SaveOpenChats();
+
+        _ = UpdateCurrentSessionSettingsAsync();
     }
 
     private void ReasoningComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -269,7 +286,31 @@ public partial class MainWindow : Window
 
         _settings.SelectedReasoningEffort = ReasoningComboBox.SelectedItem?.ToString();
         _settingsStore.Save(_settings);
-        SaveOpenChats();
+
+        _ = UpdateCurrentSessionSettingsAsync();
+    }
+
+    private async Task UpdateCurrentSessionSettingsAsync()
+    {
+        if (CurrentChat is { } chat && !chat.IsSessionMissing && !string.IsNullOrWhiteSpace(chat.CopilotSessionId))
+        {
+            if (string.IsNullOrWhiteSpace(_settings.SelectedModelId))
+            {
+                return;
+            }
+
+            try
+            {
+                await _copilot.UpdateSessionSettingsAsync(
+                    chat,
+                    _settings.SelectedModelId,
+                    _settings.SelectedReasoningEffort);
+            }
+            catch (Exception ex)
+            {
+                _debugLogger.Log("UPDATE-SESSION-SETTINGS-ERROR", ex.Message);
+            }
+        }
     }
 
     private async Task SendChatAsync(ChatSessionView chat, string prompt)
@@ -282,6 +323,7 @@ public partial class MainWindow : Window
         {
             if (string.IsNullOrWhiteSpace(shortcutResult.PromptToSend))
             {
+                chat.Messages.Add(new ChatMessage { Kind = ChatMessageKind.User, Content = prompt });
                 AddLocalShortcutMessage(chat, shortcutResult.Kind, shortcutResult.Content);
                 return;
             }
@@ -290,7 +332,11 @@ public partial class MainWindow : Window
             userMessageContent = shortcutResult.UserVisiblePrompt ?? prompt;
         }
 
+        var model = ModelComboBox.SelectedItem as ModelChoice;
+        var reasoningEffort = ReasoningComboBox.SelectedItem?.ToString();
+
         chat.Messages.Add(new ChatMessage { Kind = ChatMessageKind.User, Content = userMessageContent });
+        chat.Messages.Add(new ChatMessage { Kind = ChatMessageKind.System, Content = BuildRequestSettingsMessage(model, reasoningEffort) });
         RenderChat(chat);
         chat.IsPending = true;
         SetTabBusyIndicator(chat, true);
@@ -298,8 +344,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var model = GetSelectedModelForChat(chat);
-            await _copilot.SendAsync(chat, promptToSend, _settings, model, chat.SelectedReasoningEffort);
+            await _copilot.SendAsync(chat, promptToSend, _settings, model, reasoningEffort);
             SaveOpenChats();
         }
         catch (Exception ex)
@@ -311,6 +356,22 @@ public partial class MainWindow : Window
             GetTabContent(chat)?.SetState(false, chat.IsSessionMissing);
             SaveOpenChats();
         }
+    }
+
+    private string BuildRequestSettingsMessage(ModelChoice? model, string? reasoningEffort)
+    {
+        var modelName = model is null
+            ? _settings.SelectedModelId
+            : string.IsNullOrWhiteSpace(model.Name) || string.Equals(model.Name, model.Id, StringComparison.Ordinal)
+                ? model.Id
+                : $"{model.Name} ({model.Id})";
+        var reasoning = model?.SupportsReasoningEffort == false
+            ? "not supported"
+            : string.IsNullOrWhiteSpace(reasoningEffort)
+                ? "default"
+                : reasoningEffort;
+
+        return $"Request settings\n\nModel: {modelName}\nReasoning strength: {reasoning}";
     }
 
     private async Task StopChatAsync(ChatSessionView chat)
@@ -598,7 +659,7 @@ public partial class MainWindow : Window
         tabContent.SetBrowser(chat.Browser);
         if (persisted is not null)
         {
-            tabContent.SetLoading(true);
+        tabContent.SetLoading(true);
         }
         tabContent.SendRequested += prompt => _ = SendChatAsync(chat, prompt);
         tabContent.StopRequested += () => _ = StopChatAsync(chat);
@@ -875,7 +936,16 @@ public partial class MainWindow : Window
             Text = title,
             FontWeight = tab.Tag is ChatSessionView { HasUnreadResponse: true } ? FontWeights.Bold : FontWeights.Normal,
             TextTrimming = TextTrimming.CharacterEllipsis,
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center,
+            ToolTip = title
+        };
+        titleBlock.MouseDown += (_, e) =>
+        {
+            if (e.ChangedButton == MouseButton.Left && e.ClickCount == 2)
+            {
+                e.Handled = true;
+                RenameTab(tab);
+            }
         };
         Grid.SetColumn(titleBlock, 0);
 
@@ -920,6 +990,7 @@ public partial class MainWindow : Window
             Name = "TabCloseSlot",
             Width = 22,
             Height = 22,
+            Margin = new Thickness(8, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,
             Children =
             {
@@ -933,7 +1004,7 @@ public partial class MainWindow : Window
 
         var header = new Grid
         {
-            ToolTip = "Double-click to rename",
+            ToolTip = title,
             Width = 184,
             Children =
             {
@@ -947,7 +1018,6 @@ public partial class MainWindow : Window
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         tab.Header = header;
         tab.MouseDoubleClick -= Tab_MouseDoubleClick;
-        tab.MouseDoubleClick += Tab_MouseDoubleClick;
         tab.ContextMenu = BuildTabContextMenu(tab);
     }
 
@@ -1169,6 +1239,70 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ExportChatHistory(ChatSessionView chat)
+    {
+        if (chat.IsPending || chat.IsSessionMissing)
+        {
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Filter = "Markdown (*.md)|*.md|JSON (*.json)|*.json|Text (*.txt)|*.txt|All files (*.*)|*.*",
+            FileName = $"{MakeSafeFileName(chat.Title)}-{DateTimeOffset.Now:yyyyMMdd-HHmmss}.md"
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        var extension = IOPath.GetExtension(dialog.FileName);
+        var content = extension.Equals(".json", StringComparison.OrdinalIgnoreCase)
+            ? JsonSerializer.Serialize(ToPersistedSession(chat), new JsonSerializerOptions { WriteIndented = true })
+            : BuildMarkdownChatHistory(chat);
+
+        IOFile.WriteAllText(dialog.FileName, content, Encoding.UTF8);
+    }
+
+    private static string MakeSafeFileName(string value)
+    {
+        var invalid = IOPath.GetInvalidFileNameChars();
+        var chars = value
+            .Select(ch => invalid.Contains(ch) ? '-' : ch)
+            .ToArray();
+        var safe = new string(chars).Trim(' ', '.', '-');
+        return string.IsNullOrWhiteSpace(safe) ? "chat-history" : safe;
+    }
+
+    private static string BuildMarkdownChatHistory(ChatSessionView chat)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine($"# {chat.Title}");
+        builder.AppendLine();
+        builder.AppendLine($"Exported: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}");
+        if (!string.IsNullOrWhiteSpace(chat.CopilotSessionId))
+        {
+            builder.AppendLine($"Session: {chat.CopilotSessionId}");
+        }
+        builder.AppendLine();
+
+        foreach (var message in chat.Messages)
+        {
+            builder.AppendLine($"## {message.Kind} - {message.CreatedAt:yyyy-MM-dd HH:mm:ss zzz}");
+            if (message.CompletedAt is { } completedAt)
+            {
+                builder.AppendLine($"Completed: {completedAt:yyyy-MM-dd HH:mm:ss zzz}");
+                builder.AppendLine();
+            }
+
+            builder.AppendLine(message.Content);
+            builder.AppendLine();
+        }
+
+        return builder.ToString();
+    }
+
     private void ChatMessages_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         if (ChatTabs.Items.OfType<TabItem>().FirstOrDefault(t => ReferenceEquals((t.Tag as ChatSessionView)?.Messages, sender))?.Tag is ChatSessionView chat)
@@ -1202,15 +1336,26 @@ public partial class MainWindow : Window
             return;
         }
 
+        var sourceChat = ChatTabs.Items.OfType<TabItem>()
+            .Select(tab => tab.Tag as ChatSessionView)
+            .FirstOrDefault(chat => ReferenceEquals(chat?.Browser.CoreWebView2, sender));
+
+        if (message.Type.Equals("saveHistory", StringComparison.OrdinalIgnoreCase))
+        {
+            if (sourceChat is not null)
+            {
+                ExportChatHistory(sourceChat);
+            }
+
+            return;
+        }
+
         var id = message.Id;
         if (string.IsNullOrWhiteSpace(id))
         {
             return;
         }
 
-        var sourceChat = ChatTabs.Items.OfType<TabItem>()
-            .Select(tab => tab.Tag as ChatSessionView)
-            .FirstOrDefault(chat => ReferenceEquals(chat?.Browser.CoreWebView2, sender));
         var chatMessage = (sourceChat ?? CurrentChat)?.Messages.FirstOrDefault(m => m.Id == id);
         if (chatMessage is not null)
         {

@@ -15,12 +15,14 @@ public sealed class LocalShortcutService : ILocalShortcutService
     private readonly CopilotChatService _copilot;
     private readonly SettingsStore _settingsStore;
     private readonly IReadOnlyList<LocalShortcut> _shortcuts;
+    private CopilotUsageStatus? _lastUsage;
 
     public LocalShortcutService(CopilotChatService copilot, SettingsStore settingsStore)
     {
         _copilot = copilot;
         _settingsStore = settingsStore;
         _shortcuts = CreateShortcuts();
+        _copilot.UsageUpdated += status => _lastUsage = status;
     }
 
     public event Action<ChatSessionView, string?>? StatusChanged;
@@ -59,7 +61,11 @@ public sealed class LocalShortcutService : ILocalShortcutService
         new(
             "/plan",
             "Ask Copilot to create an implementation plan before coding.",
-            ExecutePlanShortcutAsync)
+            ExecutePlanShortcutAsync),
+        new(
+            "/usage",
+            "Show the latest Copilot usage and quota snapshot.",
+            ExecuteQuotaShortcutAsync)
     ];
 
     private static bool TryCreateInvocation(ChatSessionView chat, string prompt, out LocalShortcutInvocation invocation)
@@ -239,6 +245,52 @@ Instructions:
             : "/plan " + invocation.ArgumentText.Trim();
 
         return Task.FromResult(LocalShortcutResult.ForPrompt(prompt, visiblePrompt));
+    }
+
+    private async Task<LocalShortcutResult> ExecuteQuotaShortcutAsync(LocalShortcutInvocation invocation)
+    {
+        var usage = _lastUsage;
+        if (usage is null)
+        {
+            StatusChanged?.Invoke(invocation.Chat, "Fetching usage...");
+            string? probeError = null;
+            try
+            {
+                var settings = _settingsStore.Load();
+                (usage, probeError) = await _copilot.FetchUsageAsync(settings);
+            }
+            finally
+            {
+                StatusChanged?.Invoke(invocation.Chat, null);
+            }
+
+            if (usage is null)
+            {
+                var msg = probeError is not null
+                    ? $"Usage\n\nFailed to fetch usage data.\n\nError: {probeError}"
+                    : "Usage\n\nNo usage data was returned by the model for this account. Usage tracking may not be available for your Copilot plan.";
+                return new LocalShortcutResult(ChatMessageKind.System, msg);
+            }
+        }
+
+        var lines = new List<string>
+        {
+            "Usage",
+            "",
+            $"- Model: {usage.Model}",
+            $"- Tokens in: {Format(usage.InputTokens)}",
+            $"- Tokens out: {Format(usage.OutputTokens)}",
+            $"- Tokens reasoning: {Format(usage.ReasoningTokens)}",
+            $"- Cost: {(usage.Cost is null ? "n/a" : usage.Cost.Value.ToString("0.####"))}",
+            $"- Requests used: {Format(usage.UsedRequests)}",
+            $"- Requests total: {Format(usage.EntitlementRequests)}",
+            $"- Remaining: {(usage.RemainingPercentage is null ? "n/a" : usage.RemainingPercentage.Value.ToString("0.#") + "%")}",
+            $"- Resets: {(usage.ResetDate is null ? "n/a" : usage.ResetDate.Value.ToString("yyyy-MM-dd"))}"
+        };
+
+        return new LocalShortcutResult(ChatMessageKind.System, string.Join("\n", lines));
+
+        static string Format(double? value) => value is null ? "n/a" : value.Value.ToString("0.##");
     }
 
     private static string FormatMemoryStatus(bool enabled, bool changed)

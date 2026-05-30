@@ -24,11 +24,14 @@ public sealed class CopilotChatService : IAsyncDisposable
     private readonly ConcurrentQueue<ChatUpdate> _pendingChatUpdates = new();
     private readonly ConcurrentDictionary<ChatSessionView, ResponseBufferOptions> _responseBufferOptions = [];
     private readonly Dictionary<string, McpServerConfig> _mcpServerConfigs = new();
+    private readonly HashSet<string> _mcpServerNames = new(StringComparer.OrdinalIgnoreCase);
     private int _chatUpdateFlushScheduled;
     private volatile SessionCapabilitiesSnapshot _capabilitiesSnapshot = new([], [], []);
+    private volatile CopilotUsageStatus? _lastUsage;
     private const int MinResponseBufferIntervalMs = 500;
     private const int MaxResponseBufferIntervalMs = 2000;
     public SessionCapabilitiesSnapshot CapabilitiesSnapshot => _capabilitiesSnapshot;
+    public CopilotUsageStatus? LastUsage => _lastUsage;
     public event Action<CopilotUsageStatus>? UsageUpdated;
     public event Action<ChatSessionView, bool>? SessionPendingChanged;
     public event Action<ChatSessionView, string?>? StatusChanged;
@@ -98,6 +101,15 @@ public sealed class CopilotChatService : IAsyncDisposable
         }
     }
 
+    public async Task UpdateSessionSettingsAsync(ChatSessionView chat, string modelId, string? reasoningEffort)
+    {
+        if (_sessions.TryGetValue(chat, out var session))
+        {
+            _logger.Log("UPDATE-SETTINGS", $"Updating session {chat.CopilotSessionId} to model={modelId} | reasoning={reasoningEffort ?? "default"}");
+            await session.SetModelAsync(modelId, reasoningEffort);
+        }
+    }
+
     public async Task AbortAsync(ChatSessionView chat)
     {
         if (_sessions.TryGetValue(chat, out var session))
@@ -159,6 +171,213 @@ public sealed class CopilotChatService : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Returns the most recently cached usage status, or fetches it by sending a minimal
+    /// probe to a temporary session that is invisible to the user's chat.
+    /// Returns (status, errorMessage) — errorMessage is non-null when the probe failed.
+    /// </summary>
+    public async Task<(CopilotUsageStatus? Status, string? Error)> FetchUsageAsync(AppSettings settings, CancellationToken cancellationToken = default)
+    {
+        if (_lastUsage is not null)
+            return (_lastUsage, null);
+
+        CopilotSession? probe = null;
+        try
+        {
+            var client = await EnsureClientAsync(settings, cancellationToken);
+            var token = await ResolveGitHubTokenAsync(settings.GitHubToken);
+            probe = await client.CreateSessionAsync(new SessionConfig
+            {
+                Model = settings.SelectedModelId,
+                GitHubToken = token,
+                Streaming = true,
+                OnPermissionRequest = PermissionHandler.ApproveAll
+            });
+
+            var tcs = new TaskCompletionSource<CopilotUsageStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
+            probe.On(evt =>
+            {
+                _logger.Log("FETCH-USAGE-EVENT", evt.GetType().Name);
+                if (evt is AssistantUsageEvent usage)
+                {
+                    var status = ToUsageStatus(usage.Data);
+                    _lastUsage = status;
+                    UsageUpdated?.Invoke(status);
+                    tcs.TrySetResult(status);
+                }
+            });
+
+            _logger.Log("FETCH-USAGE", "Sending probe message...");
+            await probe.SendAsync(new MessageOptions { Prompt = "ok" });
+            _logger.Log("FETCH-USAGE", $"SendAsync returned. TCS completed: {tcs.Task.IsCompleted}");
+
+            if (!tcs.Task.IsCompleted)
+            {
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(10));
+                try { await tcs.Task.WaitAsync(timeoutCts.Token); }
+                catch (OperationCanceledException) { }
+            }
+
+            _logger.Log("FETCH-USAGE", $"Done. _lastUsage is {(_lastUsage is null ? "null" : _lastUsage.Model)}");
+        }
+        catch (Exception ex)
+        {
+            _logger.Log("FETCH-USAGE-ERROR", ex.ToString());
+            return (_lastUsage, ex.Message);
+        }
+        finally
+        {
+            if (probe is not null)
+            {
+                try { await probe.DisposeAsync(); } catch { }
+            }
+        }
+
+        return (_lastUsage, null);
+    }
+
+    /// <summary>
+    /// Finds an open chat tab by title. Returns null if not found or session not started.
+    /// </summary>
+    public ChatSessionView? FindLiveChatByTitle(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return null;
+        return _sessions.Keys.FirstOrDefault(c =>
+            string.Equals(c.Title, title, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Runs one Copilot turn for a scheduled task. If <paramref name="boundChat"/> has a live session,
+    /// it reuses that session (messages are visible in the chat tab). Otherwise creates a hidden one-shot
+    /// session using the supplied system prompt / model / reasoning settings.
+    /// Returns the assistant's final message text, or null on timeout/error.
+    /// </summary>
+    public async Task<(string? Response, string? Error)> RunTaskTurnAsync(
+        Models.TaskCopilotSpec spec,
+        ChatSessionView? boundChat,
+        string? previousOutput,
+        AppSettings settings,
+        CancellationToken cancellationToken = default)
+    {
+        var fullPrompt = spec.AppendPreviousOutput && !string.IsNullOrWhiteSpace(previousOutput)
+            ? spec.Prompt + "\n\n" + previousOutput
+            : spec.Prompt;
+
+        var timeout = TimeSpan.FromSeconds(spec.TimeoutSeconds > 0 ? spec.TimeoutSeconds : 300);
+
+        if (boundChat is not null && _sessions.TryGetValue(boundChat, out var liveSession))
+        {
+            return await RunBoundTurnAsync(liveSession, boundChat, spec, fullPrompt, settings, timeout, cancellationToken);
+        }
+
+        return await RunHiddenTurnAsync(spec, fullPrompt, settings, timeout, cancellationToken);
+    }
+
+    private async Task<(string? Response, string? Error)> RunBoundTurnAsync(
+        CopilotSession session,
+        ChatSessionView chat,
+        Models.TaskCopilotSpec spec,
+        string fullPrompt,
+        AppSettings settings,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var subscription = session.On(evt =>
+        {
+            if (evt is AssistantMessageEvent msg && !string.IsNullOrWhiteSpace(msg.Data.Content))
+            {
+                tcs.TrySetResult(msg.Data.Content);
+            }
+        });
+
+        try
+        {
+            var model = !string.IsNullOrWhiteSpace(spec.ModelId)
+                ? new ModelChoice { Id = spec.ModelId!, Name = spec.ModelId! }
+                : null;
+            await SendAsync(chat, fullPrompt, settings, model, spec.ReasoningEffort);
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(timeout);
+            var response = await tcs.Task.WaitAsync(cts.Token);
+            return (response, null);
+        }
+        catch (OperationCanceledException)
+        {
+            return (null, "Timed out waiting for Copilot response.");
+        }
+        catch (Exception ex)
+        {
+            _logger.Log("TASK-COPILOT-ERROR", ex.ToString());
+            return (null, ex.Message);
+        }
+        finally
+        {
+            (subscription as IDisposable)?.Dispose();
+        }
+    }
+
+    private async Task<(string? Response, string? Error)> RunHiddenTurnAsync(
+        Models.TaskCopilotSpec spec,
+        string fullPrompt,
+        AppSettings settings,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        CopilotSession? probe = null;
+        try
+        {
+            var client = await EnsureClientAsync(settings, cancellationToken);
+            var token = await ResolveGitHubTokenAsync(settings.GitHubToken);
+            probe = await client.CreateSessionAsync(new SessionConfig
+            {
+                Model = !string.IsNullOrWhiteSpace(spec.ModelId) ? spec.ModelId : settings.SelectedModelId,
+                ReasoningEffort = string.IsNullOrWhiteSpace(spec.ReasoningEffort) ? null : spec.ReasoningEffort,
+                GitHubToken = token,
+                Streaming = true,
+                SystemMessage = string.IsNullOrWhiteSpace(spec.SystemPrompt) ? null : new SystemMessageConfig { Content = spec.SystemPrompt },
+                OnPermissionRequest = PermissionHandler.ApproveAll
+            });
+
+            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            probe.On(evt =>
+            {
+                if (evt is AssistantMessageEvent msg && !string.IsNullOrWhiteSpace(msg.Data.Content))
+                {
+                    tcs.TrySetResult(msg.Data.Content);
+                }
+            });
+
+            await probe.SendAsync(new MessageOptions { Prompt = fullPrompt });
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(timeout);
+            try
+            {
+                var response = await tcs.Task.WaitAsync(cts.Token);
+                return (response, null);
+            }
+            catch (OperationCanceledException)
+            {
+                return (null, "Timed out waiting for Copilot response.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Log("TASK-COPILOT-HIDDEN-ERROR", ex.ToString());
+            return (null, ex.Message);
+        }
+        finally
+        {
+            if (probe is not null)
+            {
+                try { await probe.DisposeAsync(); } catch { }
+            }
+        }
+    }
+
     public async Task ResumeSessionAsync(ChatSessionView chat, AppSettings settings, ModelChoice? model, string? reasoningEffort)
     {
         SetResponseBufferOptions(chat, settings);
@@ -194,7 +413,7 @@ public sealed class CopilotChatService : IAsyncDisposable
             McpServers = _mcpServerConfigs.Count > 0 ? _mcpServerConfigs : null,
             SkillDirectories = GetEffectiveSkillDirectories(settings),
             CustomAgents = customAgents,
-            OnPermissionRequest = async (request, _) => await EvaluatePermissionAsync(request, _settingsStore.Load()),
+            OnPermissionRequest = async (request, _) => await EvaluatePermissionAsync(chat, request, _settingsStore.Load()),
             OnUserInputRequest = async (request, _) =>
             {
                 try { return await EvaluateUserInputAsync(chat, request); }
@@ -394,67 +613,17 @@ public sealed class CopilotChatService : IAsyncDisposable
                 var cfg = server.Value;
                 try
                 {
-                    McpServerConfig serverConfig;
-                    if (cfg.TryGetProperty("url", out var urlProp))
-                    {
-                        var httpCfg = new McpHttpServerConfig
-                        {
-                            Url = urlProp.GetString() ?? ""
-                        };
-                        if (cfg.TryGetProperty("headers", out var headersProp))
-                            httpCfg.Headers = headersProp.EnumerateObject()
-                                .ToDictionary(h => h.Name, h => h.Value.GetString() ?? "");
-                        if (cfg.TryGetProperty("tools", out var toolsProp))
-                        {
-                            foreach (var t in toolsProp.EnumerateArray())
-                            {
-                                var toolName = t.GetString();
-                                if (!string.IsNullOrWhiteSpace(toolName))
-                                    httpCfg.Tools.Add(toolName);
-                            }
-                        }
-                        if (!httpCfg.Tools.Any())
-                            httpCfg.Tools.Add("*");
-                        serverConfig = httpCfg;
-                    }
-                    else
-                    {
-                        var stdio = new McpStdioServerConfig
-                        {
-                            Command = cfg.TryGetProperty("command", out var cmd)
-                                ? cmd.GetString() ?? ""
-                                : "",
-                        };
-                        if (cfg.TryGetProperty("args", out var argsProp))
-                            stdio.Args = argsProp.EnumerateArray()
-                                .Select(a => a.GetString() ?? "")
-                                .ToList();
-                        if (cfg.TryGetProperty("env", out var envProp))
-                            stdio.Env = envProp.EnumerateObject()
-                                .ToDictionary(e => e.Name, e => e.Value.GetString() ?? "");
-                        if (cfg.TryGetProperty("cwd", out var cwdProp))
-                            stdio.Cwd = cwdProp.GetString();
-                        if (cfg.TryGetProperty("tools", out var stdioProp))
-                        {
-                            foreach (var t in stdioProp.EnumerateArray())
-                            {
-                                var toolName = t.GetString();
-                                if (!string.IsNullOrWhiteSpace(toolName))
-                                    stdio.Tools.Add(toolName);
-                            }
-                        }
-                        if (!stdio.Tools.Any())
-                            stdio.Tools.Add("*");
-                        serverConfig = stdio;
-                    }
+                    var serverConfig = CreateMcpServerConfig(cfg);
 
-                    if (_mcpServerConfigs.ContainsKey(name))
+                    if (_mcpServerNames.Contains(name))
                     {
                         _logger.Log("MCP-CONFIG", $"Skipped MCP server '{name}' from {source} because it was already loaded.");
                         continue;
                     }
 
-                    _mcpServerConfigs[name] = serverConfig;
+                    if (serverConfig is McpServerConfig typedServerConfig)
+                        _mcpServerConfigs[name] = typedServerConfig;
+                    _mcpServerNames.Add(name);
                     await TryAddMcpServerAsync(client, name, serverConfig, source, cancellationToken);
                     _logger.Log("MCP-CONFIG", $"Loaded MCP server '{name}' from {source}");
                     UpsertMcpServerSnapshot(name, "registered");
@@ -471,6 +640,95 @@ public sealed class CopilotChatService : IAsyncDisposable
             _logger.Log("MCP-CONFIG-ERROR", $"Failed to parse MCP config from {source}: {ex.Message}");
         }
     }
+
+    private static object CreateMcpServerConfig(JsonElement cfg)
+    {
+        var type = cfg.TryGetProperty("type", out var typeProp)
+            ? typeProp.GetString()
+            : null;
+
+        return type?.ToLowerInvariant() switch
+        {
+            "http" => CreateMcpHttpServerConfig(cfg),
+            //"sse" => CreateMcpSseServerConfig(cfg),
+            "sse" => CreateMcpHttpServerConfig(cfg),
+            "stdio" => CreateMcpStdioServerConfig(cfg),
+            _ when cfg.TryGetProperty("url", out _) => CreateMcpHttpServerConfig(cfg),
+            _ => CreateMcpStdioServerConfig(cfg),
+        };
+    }
+
+    private static McpHttpServerConfig CreateMcpHttpServerConfig(JsonElement cfg)
+    {
+        var httpCfg = new McpHttpServerConfig
+        {
+            Url = cfg.TryGetProperty("url", out var urlProp)
+                ? urlProp.GetString() ?? ""
+                : ""
+        };
+        if (cfg.TryGetProperty("headers", out var headersProp))
+            httpCfg.Headers = CreateStringDictionary(headersProp);
+        if (cfg.TryGetProperty("timeout", out var timeoutProp) && timeoutProp.TryGetInt32(out var timeout))
+            httpCfg.Timeout = timeout;
+        ApplyMcpTools(cfg, httpCfg.Tools);
+        return httpCfg;
+    }
+
+    private static McpSseServerConfig CreateMcpSseServerConfig(JsonElement cfg)
+    {
+        var sseCfg = new McpSseServerConfig
+        {
+            Url = cfg.TryGetProperty("url", out var urlProp)
+                ? urlProp.GetString() ?? ""
+                : ""
+        };
+        if (cfg.TryGetProperty("headers", out var headersProp))
+            sseCfg.Headers = CreateStringDictionary(headersProp);
+        if (cfg.TryGetProperty("timeout", out var timeoutProp) && timeoutProp.TryGetInt32(out var timeout))
+            sseCfg.Timeout = timeout;
+        ApplyMcpTools(cfg, sseCfg.Tools);
+        return sseCfg;
+    }
+
+    private static McpStdioServerConfig CreateMcpStdioServerConfig(JsonElement cfg)
+    {
+        var stdio = new McpStdioServerConfig
+        {
+            Command = cfg.TryGetProperty("command", out var cmd)
+                ? cmd.GetString() ?? ""
+                : "",
+        };
+        if (cfg.TryGetProperty("args", out var argsProp))
+            stdio.Args = argsProp.EnumerateArray()
+                .Select(a => a.GetString() ?? "")
+                .ToList();
+        if (cfg.TryGetProperty("env", out var envProp))
+            stdio.Env = envProp.EnumerateObject()
+                .ToDictionary(e => e.Name, e => e.Value.GetString() ?? "");
+        if (cfg.TryGetProperty("cwd", out var cwdProp))
+            stdio.Cwd = cwdProp.GetString();
+        ApplyMcpTools(cfg, stdio.Tools);
+        return stdio;
+    }
+
+    private static void ApplyMcpTools(JsonElement cfg, IList<string> tools)
+    {
+        if (cfg.TryGetProperty("tools", out var toolsProp))
+        {
+            foreach (var t in toolsProp.EnumerateArray())
+            {
+                var toolName = t.GetString();
+                if (!string.IsNullOrWhiteSpace(toolName))
+                    tools.Add(toolName);
+            }
+        }
+        if (!tools.Any())
+            tools.Add("*");
+    }
+
+    private static Dictionary<string, string> CreateStringDictionary(JsonElement obj)
+        => obj.EnumerateObject()
+            .ToDictionary(e => e.Name, e => e.Value.GetString() ?? "");
 
     private async Task TryAddMcpServerAsync(
         CopilotClient client,
@@ -516,7 +774,7 @@ public sealed class CopilotChatService : IAsyncDisposable
             McpServers = _mcpServerConfigs.Count > 0 ? _mcpServerConfigs : null,
             SkillDirectories = GetEffectiveSkillDirectories(settings),
             CustomAgents = customAgents,
-            OnPermissionRequest = async (request, _) => await EvaluatePermissionAsync(request, _settingsStore.Load()),
+            OnPermissionRequest = async (request, _) => await EvaluatePermissionAsync(chat, request, _settingsStore.Load()),
             OnUserInputRequest = async (request, _) =>
             {
                 try { return await EvaluateUserInputAsync(chat, request); }
@@ -540,7 +798,8 @@ public sealed class CopilotChatService : IAsyncDisposable
         var prompt = new UserInputPrompt(
             request.Question ?? "",
             request.Choices?.ToArray() ?? [],
-            request.AllowFreeform != false);
+            request.AllowFreeform != false,
+            chat.Title);
 
         _logger.Log("ASK-USER-REQUEST", $"Thread={System.Threading.Thread.CurrentThread.IsThreadPoolThread} IsBackground={System.Threading.Thread.CurrentThread.IsBackground} ManagedId={System.Threading.Thread.CurrentThread.ManagedThreadId} | Question: {prompt.Question} | Choices: [{string.Join(", ", prompt.Choices)}] | AllowFreeform: {prompt.AllowFreeform}");
 
@@ -577,9 +836,9 @@ public sealed class CopilotChatService : IAsyncDisposable
         }
     }
 
-    private async Task<PermissionRequestResult> EvaluatePermissionAsync(PermissionRequest request, AppSettings settings)
+    private async Task<PermissionRequestResult> EvaluatePermissionAsync(ChatSessionView chat, PermissionRequest request, AppSettings settings)
     {
-        var prompt = ToPermissionPrompt(request);
+        var prompt = ToPermissionPrompt(request) with { SessionTitle = chat.Title };
 
         if (prompt.Kind.Equals("memory", StringComparison.OrdinalIgnoreCase) &&
             !settings.Permissions.AllowMemoryByDefault)
@@ -1359,8 +1618,10 @@ public sealed class CopilotChatService : IAsyncDisposable
                 SetPending(chat, false);
                 break;
             case AssistantUsageEvent usage:
-                _logger.Log("USAGE", ToUsageStatus(usage.Data).ToStatusText());
-                UsageUpdated?.Invoke(ToUsageStatus(usage.Data));
+                var usageStatus = ToUsageStatus(usage.Data);
+                _lastUsage = usageStatus;
+                _logger.Log("USAGE", usageStatus.ToStatusText());
+                UsageUpdated?.Invoke(usageStatus);
                 break;
         }
     }
@@ -1527,6 +1788,24 @@ public sealed class CopilotChatService : IAsyncDisposable
         {
             ScheduleChatUpdateFlush(GetResponseBufferDelay(nextUpdate.Chat));
         }
+    }
+
+    private sealed class McpSseServerConfig
+    {
+        [JsonPropertyName("type")]
+        public string Type => "sse";
+
+        [JsonPropertyName("url")]
+        public string Url { get; set; } = string.Empty;
+
+        [JsonPropertyName("headers")]
+        public IDictionary<string, string>? Headers { get; set; }
+
+        [JsonPropertyName("tools")]
+        public IList<string> Tools { get; } = [];
+
+        [JsonPropertyName("timeout")]
+        public int? Timeout { get; set; }
     }
 
     private void SetResponseBufferOptions(ChatSessionView chat, AppSettings settings)
@@ -1859,10 +2138,11 @@ public sealed record PermissionPrompt(
     string? FileName,
     string? Command,
     string? Host,
-    IReadOnlyList<ShellCommandPermission> Commands);
+    IReadOnlyList<ShellCommandPermission> Commands,
+    string? SessionTitle = null);
 
 public sealed record ShellCommandPermission(string Identifier, bool ReadOnly);
 
-public sealed record UserInputPrompt(string Question, IReadOnlyList<string> Choices, bool AllowFreeform);
+public sealed record UserInputPrompt(string Question, IReadOnlyList<string> Choices, bool AllowFreeform, string? SessionTitle = null);
 
 public sealed record UserInputPromptResult(string Answer, bool WasFreeform);
