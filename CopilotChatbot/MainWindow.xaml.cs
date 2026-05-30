@@ -1,4 +1,5 @@
 using System.Collections.Specialized;
+using System.Text;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
@@ -10,7 +11,10 @@ using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using CopilotChatbot.Models;
 using CopilotChatbot.Services;
+using Microsoft.Win32;
 using Microsoft.Web.WebView2.Core;
+using IOFile = System.IO.File;
+using IOPath = System.IO.Path;
 using SymbolRegular = Wpf.Ui.Controls.SymbolRegular;
 
 
@@ -288,7 +292,11 @@ public partial class MainWindow : Window
             userMessageContent = shortcutResult.UserVisiblePrompt ?? prompt;
         }
 
+        var model = ModelComboBox.SelectedItem as ModelChoice;
+        var reasoningEffort = ReasoningComboBox.SelectedItem?.ToString();
+
         chat.Messages.Add(new ChatMessage { Kind = ChatMessageKind.User, Content = userMessageContent });
+        chat.Messages.Add(new ChatMessage { Kind = ChatMessageKind.System, Content = BuildRequestSettingsMessage(model, reasoningEffort) });
         RenderChat(chat);
         chat.IsPending = true;
         SetTabBusyIndicator(chat, true);
@@ -296,8 +304,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var model = ModelComboBox.SelectedItem as ModelChoice;
-            await _copilot.SendAsync(chat, promptToSend, _settings, model, ReasoningComboBox.SelectedItem?.ToString());
+            await _copilot.SendAsync(chat, promptToSend, _settings, model, reasoningEffort);
             SaveOpenChats();
         }
         catch (Exception ex)
@@ -309,6 +316,22 @@ public partial class MainWindow : Window
             GetTabContent(chat)?.SetState(false, chat.IsSessionMissing);
             SaveOpenChats();
         }
+    }
+
+    private string BuildRequestSettingsMessage(ModelChoice? model, string? reasoningEffort)
+    {
+        var modelName = model is null
+            ? _settings.SelectedModelId
+            : string.IsNullOrWhiteSpace(model.Name) || string.Equals(model.Name, model.Id, StringComparison.Ordinal)
+                ? model.Id
+                : $"{model.Name} ({model.Id})";
+        var reasoning = model?.SupportsReasoningEffort == false
+            ? "not supported"
+            : string.IsNullOrWhiteSpace(reasoningEffort)
+                ? "default"
+                : reasoningEffort;
+
+        return $"Request settings\n\nModel: {modelName}\nReasoning strength: {reasoning}";
     }
 
     private async Task StopChatAsync(ChatSessionView chat)
@@ -556,7 +579,7 @@ public partial class MainWindow : Window
         tabContent.SetBrowser(chat.Browser);
         if (persisted is not null)
         {
-            tabContent.SetLoading(true);
+        tabContent.SetLoading(true);
         }
         tabContent.SendRequested += prompt => _ = SendChatAsync(chat, prompt);
         tabContent.StopRequested += () => _ = StopChatAsync(chat);
@@ -1133,6 +1156,70 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ExportChatHistory(ChatSessionView chat)
+    {
+        if (chat.IsPending || chat.IsSessionMissing)
+        {
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Filter = "Markdown (*.md)|*.md|JSON (*.json)|*.json|Text (*.txt)|*.txt|All files (*.*)|*.*",
+            FileName = $"{MakeSafeFileName(chat.Title)}-{DateTimeOffset.Now:yyyyMMdd-HHmmss}.md"
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        var extension = IOPath.GetExtension(dialog.FileName);
+        var content = extension.Equals(".json", StringComparison.OrdinalIgnoreCase)
+            ? JsonSerializer.Serialize(ToPersistedSession(chat), new JsonSerializerOptions { WriteIndented = true })
+            : BuildMarkdownChatHistory(chat);
+
+        IOFile.WriteAllText(dialog.FileName, content, Encoding.UTF8);
+    }
+
+    private static string MakeSafeFileName(string value)
+    {
+        var invalid = IOPath.GetInvalidFileNameChars();
+        var chars = value
+            .Select(ch => invalid.Contains(ch) ? '-' : ch)
+            .ToArray();
+        var safe = new string(chars).Trim(' ', '.', '-');
+        return string.IsNullOrWhiteSpace(safe) ? "chat-history" : safe;
+    }
+
+    private static string BuildMarkdownChatHistory(ChatSessionView chat)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine($"# {chat.Title}");
+        builder.AppendLine();
+        builder.AppendLine($"Exported: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}");
+        if (!string.IsNullOrWhiteSpace(chat.CopilotSessionId))
+        {
+            builder.AppendLine($"Session: {chat.CopilotSessionId}");
+        }
+        builder.AppendLine();
+
+        foreach (var message in chat.Messages)
+        {
+            builder.AppendLine($"## {message.Kind} - {message.CreatedAt:yyyy-MM-dd HH:mm:ss zzz}");
+            if (message.CompletedAt is { } completedAt)
+            {
+                builder.AppendLine($"Completed: {completedAt:yyyy-MM-dd HH:mm:ss zzz}");
+                builder.AppendLine();
+            }
+
+            builder.AppendLine(message.Content);
+            builder.AppendLine();
+        }
+
+        return builder.ToString();
+    }
+
     private void ChatMessages_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         if (ChatTabs.Items.OfType<TabItem>().FirstOrDefault(t => ReferenceEquals((t.Tag as ChatSessionView)?.Messages, sender))?.Tag is ChatSessionView chat)
@@ -1165,15 +1252,26 @@ public partial class MainWindow : Window
             return;
         }
 
+        var sourceChat = ChatTabs.Items.OfType<TabItem>()
+            .Select(tab => tab.Tag as ChatSessionView)
+            .FirstOrDefault(chat => ReferenceEquals(chat?.Browser.CoreWebView2, sender));
+
+        if (message.Type.Equals("saveHistory", StringComparison.OrdinalIgnoreCase))
+        {
+            if (sourceChat is not null)
+            {
+                ExportChatHistory(sourceChat);
+            }
+
+            return;
+        }
+
         var id = message.Id;
         if (string.IsNullOrWhiteSpace(id))
         {
             return;
         }
 
-        var sourceChat = ChatTabs.Items.OfType<TabItem>()
-            .Select(tab => tab.Tag as ChatSessionView)
-            .FirstOrDefault(chat => ReferenceEquals(chat?.Browser.CoreWebView2, sender));
         var chatMessage = (sourceChat ?? CurrentChat)?.Messages.FirstOrDefault(m => m.Id == id);
         if (chatMessage is not null)
         {

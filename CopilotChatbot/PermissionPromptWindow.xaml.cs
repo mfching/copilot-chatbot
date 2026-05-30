@@ -10,10 +10,16 @@ public partial class PermissionPromptWindow : Window
     public PermissionPromptWindow(PermissionPrompt prompt)
     {
         InitializeComponent();
+        Title = FormatDialogTitle(prompt.SessionTitle, "Permission Request");
         KindTextBlock.Text = $"Permission type: {prompt.Kind}";
         ScopeTextBlock.Text = GetScopeText(prompt);
         DetailsTextBox.Text = BuildDetails(prompt);
     }
+
+    private static string FormatDialogTitle(string? sessionTitle, string dialogTitle) =>
+        string.IsNullOrWhiteSpace(sessionTitle)
+            ? dialogTitle
+            : $"{sessionTitle} - {dialogTitle}";
 
     private static string GetScopeText(PermissionPrompt prompt)
     {

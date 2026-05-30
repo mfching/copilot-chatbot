@@ -413,7 +413,7 @@ public sealed class CopilotChatService : IAsyncDisposable
             McpServers = _mcpServerConfigs.Count > 0 ? _mcpServerConfigs : null,
             SkillDirectories = GetEffectiveSkillDirectories(settings),
             CustomAgents = customAgents,
-            OnPermissionRequest = async (request, _) => await EvaluatePermissionAsync(request, _settingsStore.Load()),
+            OnPermissionRequest = async (request, _) => await EvaluatePermissionAsync(chat, request, _settingsStore.Load()),
             OnUserInputRequest = async (request, _) =>
             {
                 try { return await EvaluateUserInputAsync(chat, request); }
@@ -774,7 +774,7 @@ public sealed class CopilotChatService : IAsyncDisposable
             McpServers = _mcpServerConfigs.Count > 0 ? _mcpServerConfigs : null,
             SkillDirectories = GetEffectiveSkillDirectories(settings),
             CustomAgents = customAgents,
-            OnPermissionRequest = async (request, _) => await EvaluatePermissionAsync(request, _settingsStore.Load()),
+            OnPermissionRequest = async (request, _) => await EvaluatePermissionAsync(chat, request, _settingsStore.Load()),
             OnUserInputRequest = async (request, _) =>
             {
                 try { return await EvaluateUserInputAsync(chat, request); }
@@ -798,7 +798,8 @@ public sealed class CopilotChatService : IAsyncDisposable
         var prompt = new UserInputPrompt(
             request.Question ?? "",
             request.Choices?.ToArray() ?? [],
-            request.AllowFreeform != false);
+            request.AllowFreeform != false,
+            chat.Title);
 
         _logger.Log("ASK-USER-REQUEST", $"Thread={System.Threading.Thread.CurrentThread.IsThreadPoolThread} IsBackground={System.Threading.Thread.CurrentThread.IsBackground} ManagedId={System.Threading.Thread.CurrentThread.ManagedThreadId} | Question: {prompt.Question} | Choices: [{string.Join(", ", prompt.Choices)}] | AllowFreeform: {prompt.AllowFreeform}");
 
@@ -835,9 +836,9 @@ public sealed class CopilotChatService : IAsyncDisposable
         }
     }
 
-    private async Task<PermissionRequestResult> EvaluatePermissionAsync(PermissionRequest request, AppSettings settings)
+    private async Task<PermissionRequestResult> EvaluatePermissionAsync(ChatSessionView chat, PermissionRequest request, AppSettings settings)
     {
-        var prompt = ToPermissionPrompt(request);
+        var prompt = ToPermissionPrompt(request) with { SessionTitle = chat.Title };
 
         if (prompt.Kind.Equals("memory", StringComparison.OrdinalIgnoreCase) &&
             !settings.Permissions.AllowMemoryByDefault)
@@ -2137,10 +2138,11 @@ public sealed record PermissionPrompt(
     string? FileName,
     string? Command,
     string? Host,
-    IReadOnlyList<ShellCommandPermission> Commands);
+    IReadOnlyList<ShellCommandPermission> Commands,
+    string? SessionTitle = null);
 
 public sealed record ShellCommandPermission(string Identifier, bool ReadOnly);
 
-public sealed record UserInputPrompt(string Question, IReadOnlyList<string> Choices, bool AllowFreeform);
+public sealed record UserInputPrompt(string Question, IReadOnlyList<string> Choices, bool AllowFreeform, string? SessionTitle = null);
 
 public sealed record UserInputPromptResult(string Answer, bool WasFreeform);
