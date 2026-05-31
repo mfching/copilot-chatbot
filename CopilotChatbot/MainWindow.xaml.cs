@@ -262,8 +262,7 @@ public partial class MainWindow : Window
         }
         ReasoningComboBox.IsEnabled = model.SupportsReasoningEffort && CurrentChat is not { IsPending: true };
         _settingsStore.Save(_settings);
-
-        _ = UpdateCurrentSessionSettingsAsync();
+        SaveOpenChats();
     }
 
     private void ReasoningComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -286,31 +285,7 @@ public partial class MainWindow : Window
 
         _settings.SelectedReasoningEffort = ReasoningComboBox.SelectedItem?.ToString();
         _settingsStore.Save(_settings);
-
-        _ = UpdateCurrentSessionSettingsAsync();
-    }
-
-    private async Task UpdateCurrentSessionSettingsAsync()
-    {
-        if (CurrentChat is { } chat && !chat.IsSessionMissing && !string.IsNullOrWhiteSpace(chat.CopilotSessionId))
-        {
-            if (string.IsNullOrWhiteSpace(_settings.SelectedModelId))
-            {
-                return;
-            }
-
-            try
-            {
-                await _copilot.UpdateSessionSettingsAsync(
-                    chat,
-                    _settings.SelectedModelId,
-                    _settings.SelectedReasoningEffort);
-            }
-            catch (Exception ex)
-            {
-                _debugLogger.Log("UPDATE-SESSION-SETTINGS-ERROR", ex.Message);
-            }
-        }
+        SaveOpenChats();
     }
 
     private async Task SendChatAsync(ChatSessionView chat, string prompt)
@@ -344,7 +319,8 @@ public partial class MainWindow : Window
 
         try
         {
-            await _copilot.SendAsync(chat, promptToSend, _settings, model, reasoningEffort);
+            var model = GetSelectedModelForChat(chat);
+            await _copilot.SendAsync(chat, promptToSend, _settings, model, chat.SelectedReasoningEffort);
             SaveOpenChats();
         }
         catch (Exception ex)

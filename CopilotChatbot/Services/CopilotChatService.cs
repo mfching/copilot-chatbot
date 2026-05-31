@@ -27,7 +27,6 @@ public sealed class CopilotChatService : IAsyncDisposable
     private readonly HashSet<string> _mcpServerNames = new(StringComparer.OrdinalIgnoreCase);
     private int _chatUpdateFlushScheduled;
     private volatile SessionCapabilitiesSnapshot _capabilitiesSnapshot = new([], [], []);
-    private volatile CopilotUsageStatus? _lastUsage;
     private const int MinResponseBufferIntervalMs = 500;
     private const int MaxResponseBufferIntervalMs = 2000;
     public SessionCapabilitiesSnapshot CapabilitiesSnapshot => _capabilitiesSnapshot;
@@ -1788,24 +1787,6 @@ public sealed class CopilotChatService : IAsyncDisposable
         {
             ScheduleChatUpdateFlush(GetResponseBufferDelay(nextUpdate.Chat));
         }
-    }
-
-    private sealed class McpSseServerConfig
-    {
-        [JsonPropertyName("type")]
-        public string Type => "sse";
-
-        [JsonPropertyName("url")]
-        public string Url { get; set; } = string.Empty;
-
-        [JsonPropertyName("headers")]
-        public IDictionary<string, string>? Headers { get; set; }
-
-        [JsonPropertyName("tools")]
-        public IList<string> Tools { get; } = [];
-
-        [JsonPropertyName("timeout")]
-        public int? Timeout { get; set; }
     }
 
     private void SetResponseBufferOptions(ChatSessionView chat, AppSettings settings)
