@@ -13,7 +13,7 @@ It provides a tabbed chat UI, session restore, model selection, reasoning effort
   - Typing indicator while a response is streaming
   - Unread marker and bold title for background responses
 - Live model discovery from GitHub Copilot SDK
-- Reasoning effort selection for models that support it
+- Per-chat model and reasoning effort selection for models that support it
 - Chat navigation controls:
   - Scroll to top and bottom
   - Jump to previous and next user question
@@ -32,6 +32,7 @@ It provides a tabbed chat UI, session restore, model selection, reasoning effort
 - MCP server, agent, and skill capability view
 - Local slash shortcuts for inspecting or changing runtime state
 - Extra agent and skill folder configuration
+- Scheduled automation tasks with cron expressions, manual runs, run history, optional pre/post commands, Copilot steps, and file/HTTP/named-pipe handoff
 - Light, dark, and follow-the-sun theme options
 - Optional debug logging
 - Markdown rendering, collapsible message cards, response pop-out windows, embedded HTML previews, and iframe preview pop-out windows
@@ -108,12 +109,28 @@ Shortcuts are handled locally by the app and are not sent as chat prompts.
 - `/memory off` - reject memory permission requests automatically across sessions.
 - `/usage` - show the latest Copilot usage and quota snapshot (tokens, requests, remaining, reset date).
 
+## Scheduled Tasks
+
+Use **Scheduler** in the main window to create repeatable automation tasks.
+
+Tasks can be manual-only or scheduled with a cron expression. Each task can run:
+
+- An optional pre-command
+- An optional Copilot prompt, either in a hidden one-shot session or bound to an existing chat tab by title
+- An optional post-command
+- An optional handoff to a file, HTTP endpoint, or named pipe
+
+Task templates support values such as `{{pre_output}}`, `{{copilot_response}}`, `{{copilot_response_file}}`, `{{task_name}}`, `{{run_id}}`, and `{{timestamp}}`.
+
+The scheduler keeps the latest run records per task and exposes them through the task history window.
+
 ## Configuration and Data Files
 
 The app stores local configuration under:
 
 - `%APPDATA%\CopilotChatbot\settings.json`
 - `%APPDATA%\CopilotChatbot\chat-sessions.json.gz`
+- `%APPDATA%\CopilotChatbot\scheduler-runs\...`
 
 If debug logging is enabled, logs are written to:
 
@@ -153,9 +170,12 @@ Default agent and skill locations shown by the app:
 - `CopilotChatbot/ChatTabContent.*` - per-tab chat input, status, and navigation controls
 - `CopilotChatbot/SettingsWindow.*` - settings UI and persistence wiring
 - `CopilotChatbot/SettingsPasswordWindow.*` - startup unlock prompt for encrypted settings
+- `CopilotChatbot/SchedulerWindow.*` - scheduled task editor and manual run controls
+- `CopilotChatbot/SchedulerHistoryWindow.*` - scheduled task run history viewer
 - `CopilotChatbot/ResponseWindow.*` - full response pop-out viewer
 - `CopilotChatbot/IframePreviewWindow.*` - embedded HTML iframe pop-out viewer
-- `.github/workflows/dotnet-build.yaml` - GitHub Actions build workflow
+- `.github/workflows/dotnet-desktop.yml` - GitHub Actions desktop publish and release workflow
+- `.github/workflows/dotnet-build.yaml` - manual GitHub Actions solution build workflow
 
 ## Troubleshooting
 
@@ -178,6 +198,10 @@ Default agent and skill locations shown by the app:
 - UI slows while responses stream:
   - Chat updates and session saves are throttled, but very large HTML previews can still be expensive to render in WebView2.
   - Use the iframe pop-out button for large embedded previews.
+- Scheduled task does not run:
+  - Confirm the task is enabled and the cron expression is valid.
+  - Use **Run Now** to separate scheduler timing problems from command or Copilot failures.
+  - Check the task history window for captured output and errors.
 - Manual GitHub Actions run does not start:
   - Confirm Actions are enabled for the repository.
   - Confirm the workflow exists on the default branch at `.github/workflows/dotnet-build.yaml`.
@@ -195,12 +219,27 @@ Current project defaults (from `CopilotChatbot.csproj`):
 
 ## GitHub Actions
 
-The repository includes a Windows build workflow:
+The repository includes two Windows GitHub Actions workflows.
 
-- Runs on pushes to `main` or `master`
-- Runs on pull requests targeting `main` or `master`
+### Desktop Publish Workflow
+
+`.github/workflows/dotnet-desktop.yml`:
+
+- Runs on pushes to `main`
+- Runs on pull requests targeting `main`
+- Restores and publishes `CopilotChatbot/CopilotChatbot.csproj`
+- Uses .NET 9 on `windows-latest`
+- Publishes a self-contained single-file `win-x64` build
+- Uploads `CopilotChatbot-win-x64.zip` as a build artifact
+- Creates a release named `Build <run_number>` with tag `build-<run_number>` on `main`
+
+### Manual Build Workflow
+
+`.github/workflows/dotnet-build.yaml`:
+
 - Can be started manually from the GitHub Actions UI
-- Builds with .NET 9 on `windows-latest`
+- Restores and builds `CopilotChatbot.sln`
+- Uses .NET 9 on `windows-latest`
 
 Build versioning uses:
 
