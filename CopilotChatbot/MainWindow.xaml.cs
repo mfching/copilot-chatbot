@@ -1412,6 +1412,16 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (message.Type.Equals("copyUserMessage", StringComparison.OrdinalIgnoreCase))
+        {
+            if (sourceChat is not null && !string.IsNullOrWhiteSpace(message.Id))
+            {
+                CopyUserMessageToClipboard(sourceChat, message.Id);
+            }
+
+            return;
+        }
+
         if (message.Type.Equals("promptResponse", StringComparison.OrdinalIgnoreCase))
         {
             if (sourceChat is not null && !string.IsNullOrWhiteSpace(message.Id))
@@ -1432,6 +1442,26 @@ public partial class MainWindow : Window
         if (chatMessage is not null)
         {
             new ResponseWindow(_htmlRenderer, chatMessage, _isDarkTheme) { Owner = this }.Show();
+        }
+    }
+
+    private void CopyUserMessageToClipboard(ChatSessionView chat, string messageId)
+    {
+        var message = chat.Messages.FirstOrDefault(m => m.Id == messageId && m.Kind == ChatMessageKind.User);
+        if (message is null)
+        {
+            return;
+        }
+
+        try
+        {
+            Clipboard.SetText(message.Content);
+            GetTabContent(chat)?.SetStatus("Copied user message");
+        }
+        catch (Exception ex)
+        {
+            _debugLogger.Log("COPY-USER-MESSAGE-ERROR", ex.Message);
+            GetTabContent(chat)?.SetStatus("Failed to copy user message");
         }
     }
 

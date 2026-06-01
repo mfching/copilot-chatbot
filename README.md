@@ -7,7 +7,7 @@ It provides a tabbed chat UI, session restore, model selection, reasoning effort
 ## Features
 
 - Multi-tab chat sessions with per-tab system prompts
-- Saved chat sessions restored on startup, with debounced background persistence
+- Saved chat sessions restored on startup, with debounced background persistence and default scroll-to-bottom positioning
 - Per-tab status indicators:
   - Busy spinner while Copilot is thinking or running tools
   - Typing indicator while a response is streaming
@@ -20,6 +20,7 @@ It provides a tabbed chat UI, session restore, model selection, reasoning effort
   - Jump to previous and next user question
 - Turn-based response display, where all responses for a prompt are grouped under the user message
 - Expanding any collapsed user turn opens the latest assistant response in that turn when the nested articles are all collapsed
+- User messages include an inline copy button for copying the original prompt text to the Windows clipboard
 - Activity bar for transient Copilot status such as reasoning, tool execution, background agent progress, and shortcut activity
 - Tool and permission workflow:
   - Folder access rules (read/read-write)
@@ -27,7 +28,8 @@ It provides a tabbed chat UI, session restore, model selection, reasoning effort
   - Saved permission rules
   - Per-command shell approvals for Copilot SDK shell permission requests
   - Permission and user-input requests appear as interactive chat history articles instead of separate modal dialogs
-  - Choice prompts can be answered by clicking a choice; prompts that allow freeform input include an optional answer box
+  - Choice prompts can be answered by clicking a choice; choices are displayed one per line
+  - Prompts that allow freeform input include an optional answer box and do not highlight a suggested choice as the default
   - Answered prompt articles disable their controls and collapse by default
   - Memory permission toggle through `/memory`
 - GitHub token and user secrets with show/hide controls
@@ -115,6 +117,7 @@ Shortcuts are handled locally by the app and are not sent as chat prompts.
 - `/memory` - show the current long-term memory permission state.
 - `/memory on` - approve memory permission requests automatically across sessions.
 - `/memory off` - reject memory permission requests automatically across sessions.
+- `/reset` - reset the current tab's Copilot conversation context while keeping the visible chat history.
 - `/usage` - show the latest Copilot usage and quota snapshot (tokens, requests, remaining, reset date).
 
 ## In-Chat Prompts
@@ -122,8 +125,9 @@ Shortcuts are handled locally by the app and are not sent as chat prompts.
 Copilot permission requests and user-response requests are rendered directly inside the chat history as prompt articles.
 
 - Permission prompts provide Deny, Allow once, Allow for session, and Save setting actions.
-- Choice prompts can be answered by clicking a choice button.
+- Choice prompts can be answered by clicking a choice button, with each choice shown on its own line.
 - Prompts that allow freeform input show an optional textbox alongside choice buttons.
+- When freeform input is allowed, suggested choices are not visually highlighted as the default response.
 - Once answered, prompt controls are disabled, the submitted answer is recorded, and the article collapses by default.
 - The tab shows an input-required marker while a prompt is waiting.
 - If tray notifications are enabled in **Settings > Appearance**, Windows shows a tray balloon when input is required.

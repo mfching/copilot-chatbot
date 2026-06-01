@@ -79,6 +79,8 @@ main { padding:10px 14px; }
 .history-save-btn:hover { color:var(--icon-hover); background:var(--btn-bg); opacity:1; }
 .history-save-btn:active { transform:translateY(1px); }
 main.streaming + .history-save-btn { display:none; }
+.user-copy-btn { margin-left:6px; border:0; background:transparent; color:var(--icon-dim); padding:2px; cursor:pointer; line-height:0; display:inline-flex; vertical-align:text-bottom; border-radius:4px; }
+.user-copy-btn:hover { color:var(--icon-hover); background:var(--btn-bg); }
 .msg { margin:0 0 7px 0; border:1px solid var(--border); border-radius:8px; background:var(--card); overflow:hidden; box-shadow:0 1px 2px rgba(0,0,0,.07); }
 .turn-responses { padding:0 8px 8px 8px; }
 .turn-responses .msg { margin:7px 0 0 0; box-shadow:none; }
@@ -175,6 +177,13 @@ document.addEventListener('click', e => {
   e.preventDefault();
   e.stopPropagation();
   chrome.webview.postMessage({ type: 'saveHistory' });
+});
+document.addEventListener('click', e => {
+  const button = e.target.closest('[data-copy-user-id]');
+  if (!button) return;
+  e.preventDefault();
+  e.stopPropagation();
+  chrome.webview.postMessage({ type: 'copyUserMessage', id: button.dataset.copyUserId });
 });
 document.addEventListener('click', e => {
   const button = e.target.closest('[data-open-id]');
@@ -403,13 +412,22 @@ document.addEventListener('toggle', e => {
     private string RenderInlineContent(ChatMessage message)
     {
         if (message.Kind is ChatMessageKind.User)
-            return $"<p style=\"margin:0;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word\">{WebUtility.HtmlEncode(message.Content)}</p>";
+            return RenderUserContent(message);
         if (message.Kind is ChatMessageKind.Prompt && message.Prompt is not null)
             return RenderPromptContent(message);
         if (message.Kind is ChatMessageKind.Intent or ChatMessageKind.Tool or ChatMessageKind.Error)
             return $"<pre style=\"white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word\">{WebUtility.HtmlEncode(message.Content)}</pre>";
         var html = Markdown.ToHtml(message.Content, _markdown);
         return InjectLiveHtmlBlocks(html);
+    }
+
+    private static string RenderUserContent(ChatMessage message)
+    {
+        var content = WebUtility.HtmlEncode(message.Content);
+        var id = WebUtility.HtmlEncode(message.Id);
+        return $$"""
+<p style="margin:0;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word">{{content}}<button class="user-copy-btn" data-copy-user-id="{{id}}" title="Copy message" aria-label="Copy message"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="8" height="8" rx="1.4"/><path d="M3 11V3.8A.8.8 0 0 1 3.8 3H11"/></svg></button></p>
+""";
     }
 
     private static string RenderPromptContent(ChatMessage message)
@@ -436,7 +454,7 @@ document.addEventListener('toggle', e => {
             for (var i = 0; i < prompt.Choices.Count; i++)
             {
                 var choice = prompt.Choices[i];
-                buttons.Append(RenderPromptButton(choice, choice, "choice", i == 0 ? "primary" : "", disabled));
+                buttons.Append(RenderPromptButton(choice, choice, "choice", i == 0 && !prompt.AllowFreeform ? "primary" : "", disabled));
             }
         }
 
