@@ -21,6 +21,9 @@ public sealed class HtmlRenderer
         ["--text"]        = dark ? "#E6EDF3" : "#1F2328",
         ["--muted"]       = dark ? "#8B949E" : "#57606A",
         ["--btn-bg"]      = dark ? "#21262D" : "#F6F8FA",
+        ["--scrollbar-track"] = dark ? "#0B1220" : "#F3F5F8",
+        ["--scrollbar-thumb"] = dark ? "#344054" : "#C5CED8",
+        ["--scrollbar-thumb-hover"] = dark ? "#46566E" : "#9BA7B5",
         ["--icon-dim"]    = dark ? "rgba(230,237,243,0.45)" : "rgba(87,96,106,0.50)",
         ["--icon-hover"]  = dark ? "#E6EDF3" : "#1F2328",
         ["--code-bg"]     = dark ? "#0D1117" : "#F6F8FA",
@@ -74,6 +77,11 @@ public sealed class HtmlRenderer
 {{rootVars}}
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin:0; padding:0; background:var(--bg); color:var(--text); font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+html { scrollbar-color:var(--scrollbar-thumb) var(--scrollbar-track); scrollbar-width:thin; }
+::-webkit-scrollbar { width:12px; height:12px; }
+::-webkit-scrollbar-track { background:var(--scrollbar-track); }
+::-webkit-scrollbar-thumb { background:var(--scrollbar-thumb); border:3px solid var(--scrollbar-track); border-radius:999px; }
+::-webkit-scrollbar-thumb:hover { background:var(--scrollbar-thumb-hover); }
 main { padding:10px 14px; }
 .history-save-btn { position:fixed; top:12px; right:16px; z-index:20; width:32px; height:32px; border:1px solid var(--border); border-radius:50%; background:var(--card); color:var(--icon-dim); cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 10px rgba(0,0,0,.18); opacity:.86; }
 .history-save-btn:hover { color:var(--icon-hover); background:var(--btn-bg); opacity:1; }

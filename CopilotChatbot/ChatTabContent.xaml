@@ -405,6 +405,60 @@
                     </Viewbox>
                 </Button>
 
+                <!-- Auto-collapse previous message article when sending -->
+                <ToggleButton x:Name="AutoCollapsePreviousBtn" DockPanel.Dock="Right"
+                              Width="24" Height="24" Margin="0,0,6,0" Cursor="Hand"
+                              ToolTip="Auto-collapse previous article on send"
+                              Checked="AutoCollapsePrevious_Checked"
+                              Unchecked="AutoCollapsePrevious_Checked">
+                    <ToggleButton.Template>
+                        <ControlTemplate TargetType="ToggleButton">
+                            <Border x:Name="Chr"
+                                    Background="{DynamicResource SurfaceBrush}"
+                                    BorderBrush="{DynamicResource BorderBrushModern}"
+                                    BorderThickness="1" CornerRadius="12">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="6" ShadowDepth="0" Opacity="0.15" />
+                                </Border.Effect>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Chr" Property="Background" Value="{DynamicResource ControlBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="Chr" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                                    <Setter TargetName="Chr" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Chr" Property="Background" Value="{DynamicResource BorderBrushModern}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </ToggleButton.Template>
+                    <Viewbox Width="14" Height="14" Stretch="Uniform">
+                        <Grid Width="14" Height="14">
+                            <Path Data="M 4 2.5 L 7 5 L 10 2.5"
+                                  Stroke="{DynamicResource MutedTextBrush}"
+                                  StrokeThickness="1.8"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round" />
+                            <Path Data="M 4 11.5 L 7 9 L 10 11.5"
+                                  Stroke="{DynamicResource MutedTextBrush}"
+                                  StrokeThickness="1.8"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round" />
+                            <Path Data="M 2.5 7 L 11.5 7"
+                                  Stroke="{DynamicResource AccentBrush}"
+                                  StrokeThickness="1.6"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round" />
+                        </Grid>
+                    </Viewbox>
+                </ToggleButton>
+
                 <!-- Status indicator (left, fills remaining space) -->
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <Ellipse x:Name="ActivityDot" Width="6" Height="6"

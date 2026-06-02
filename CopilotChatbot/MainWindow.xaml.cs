@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -23,6 +24,8 @@ namespace CopilotChatbot;
 
 public partial class MainWindow : Window
 {
+    private const double MinTabHeaderWidth = 184;
+    private const double TabStripChromeWidth = 32;
     private readonly SettingsStore _settingsStore = new();
     private readonly ChatSessionStore _chatSessionStore = new();
     private readonly HtmlRenderer _htmlRenderer = new();
@@ -38,8 +41,10 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, TaskCompletionSource<PermissionPromptDecision>> _pendingPermissionPrompts = [];
     private readonly Dictionary<string, TaskCompletionSource<UserInputPromptResult>> _pendingUserInputPrompts = [];
     private readonly Dictionary<string, ChatSessionView> _pendingPromptChats = [];
+    private readonly Dictionary<ChatSessionView, HashSet<string>> _forceClosedArticleIds = [];
     private readonly HashSet<ChatSessionView> _scrollToBottomAfterInitialRender = [];
     private readonly HashSet<ChatSessionView> _resumedSessions = [];
+    private readonly List<ChatProjectView> _projects = [];
     private AppSettings _settings;
     private bool _isDarkTheme;
     private bool _showDetailMessages;
@@ -52,6 +57,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        SetTabHeaderContentWidth(MinTabHeaderWidth);
         LoadWindowIcon();
         _settings = LoadSettingsForStartup();
         ApplyTrayNotificationSetting();
@@ -69,6 +75,7 @@ public partial class MainWindow : Window
             title => ChatTabs.Items.OfType<TabItem>()
                 .Select(t => t.Tag as ChatSessionView)
                 .FirstOrDefault(c => c is not null && string.Equals(c.Title, title, StringComparison.OrdinalIgnoreCase)));
+        SystemEvents.UserPreferenceChanged += SystemEvents_UserPreferenceChanged;
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
         Closed += MainWindow_Closed;
@@ -152,6 +159,7 @@ public partial class MainWindow : Window
         }
         finally
         {
+            SystemEvents.UserPreferenceChanged -= SystemEvents_UserPreferenceChanged;
             // Force-terminate: .NET EventCounter background threads from the SDK
             // keep the process alive indefinitely after the window closes.
             Environment.Exit(0);
@@ -226,6 +234,17 @@ public partial class MainWindow : Window
     {
         if (e.Source == ChatTabs)
         {
+            if (ChatTabs.SelectedItem is TabItem { Tag: ChatProjectView project })
+            {
+                var child = GetSessionTabs(project.Id)
+                    .FirstOrDefault(tab => tab.Visibility == Visibility.Visible);
+                if (child is not null)
+                {
+                    ChatTabs.SelectedItem = child;
+                }
+                return;
+            }
+
             if (CurrentChat is { } chat)
             {
                 SetTabUnreadState(chat, false);
@@ -325,6 +344,8 @@ public partial class MainWindow : Window
     private async Task SendChatAsync(ChatSessionView chat, string prompt)
     {
         if (chat.IsSessionMissing || string.IsNullOrWhiteSpace(prompt)) return;
+
+        StagePreviousArticleAutoCollapse(chat);
 
         var promptToSend = prompt;
         var userMessageContent = prompt;
@@ -625,10 +646,530 @@ public partial class MainWindow : Window
         new() { Id = "claude-sonnet-4.5", Name = "Claude Sonnet 4.5", IsFallback = true }
     ];
 
-    private async Task AddChatAsync(PersistedChatSession? persisted = null, bool select = true)
+    private async Task AddChatAsync(PersistedChatSession? persisted = null, bool select = true, string? projectId = null)
     {
-        var chat = CreateChatTabItem(persisted, select);
+        var chat = CreateChatTabItem(persisted, select, projectId);
         await EnsureChatBrowserInitializedAsync(chat);
+    }
+
+    private ChatProjectView EnsureProject(string? projectId, string? name = null, bool? isCollapsed = null)
+    {
+        projectId = string.IsNullOrWhiteSpace(projectId)
+            ? PersistedChatProject.DefaultProjectId
+            : projectId;
+
+        if (_projects.FirstOrDefault(project => project.Id == projectId) is { } existing)
+        {
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                existing.Name = name;
+            }
+            if (isCollapsed.HasValue)
+            {
+                existing.IsCollapsed = isCollapsed.Value;
+            }
+            EnsureProjectHeader(existing);
+            return existing;
+        }
+
+        var project = new ChatProjectView(
+            projectId,
+            string.IsNullOrWhiteSpace(name)
+                ? projectId == PersistedChatProject.DefaultProjectId ? "Default" : "Project"
+                : name,
+            isCollapsed == true);
+        _projects.Add(project);
+        EnsureProjectHeader(project);
+        return project;
+    }
+
+    private void EnsureProjectHeader(ChatProjectView project)
+    {
+        if (ChatTabs.Items.OfType<TabItem>().Any(tab => ReferenceEquals(tab.Tag, project)))
+        {
+            UpdateProjectHeader(project);
+            return;
+        }
+
+        var tab = new TabItem
+        {
+            Tag = project,
+            Content = new Grid(),
+            Focusable = false
+        };
+        SetProjectHeader(tab, project);
+        ChatTabs.Items.Add(tab);
+    }
+
+    private void SetProjectHeader(TabItem tab, ChatProjectView project)
+    {
+        var icon = new Wpf.Ui.Controls.SymbolIcon
+        {
+            Symbol = SymbolRegular.Folder20,
+            FontSize = 15,
+            Foreground = (Brush)FindResource("DisabledTextBrush"),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 6, 0)
+        };
+        Grid.SetColumn(icon, 0);
+
+        var unreadIndicator = new Ellipse
+        {
+            Name = "ProjectUnreadIndicator",
+            Width = 7,
+            Height = 7,
+            Margin = new Thickness(6, 0, 5, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Fill = (Brush)FindResource("AccentBrush"),
+            ToolTip = "Unread response in project",
+            Visibility = Visibility.Collapsed
+        };
+        Grid.SetColumn(unreadIndicator, 2);
+
+        var busySpinner = CreateProjectBusySpinner();
+        Grid.SetColumn(busySpinner, 3);
+
+        var toggleIcon = new Path
+        {
+            Name = "ProjectToggleIcon",
+            Width = 10,
+            Height = 10,
+            Data = GetProjectToggleGeometry(project.IsCollapsed),
+            Stroke = (Brush)FindResource("DisabledTextBrush"),
+            StrokeThickness = 1.8,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            StrokeLineJoin = PenLineJoin.Round,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var toggleButton = new Border
+        {
+            Name = "ProjectToggleButton",
+            Width = 22,
+            Height = 22,
+            Margin = new Thickness(8, 0, 0, 0),
+            Background = Brushes.Transparent,
+            CornerRadius = new CornerRadius(11),
+            Child = toggleIcon,
+            ToolTip = project.IsCollapsed ? "Expand project" : "Collapse project",
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        toggleButton.MouseLeftButtonDown += (_, e) =>
+        {
+            e.Handled = true;
+            ToggleProjectCollapsed(project);
+        };
+        Grid.SetColumn(toggleButton, 4);
+
+        var newChatButton = CreateProjectNewChatButton(project);
+        Grid.SetColumn(newChatButton, 4);
+        Grid.SetColumn(toggleButton, 5);
+
+        var title = new TextBlock
+        {
+            Name = "ProjectTitleTextBlock",
+            Text = project.Name,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = (Brush)FindResource("DisabledTextBrush"),
+            Opacity = 0.86,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center,
+            ToolTip = project.Name
+        };
+        Grid.SetColumn(title, 1);
+
+        var header = new Grid
+        {
+            ToolTip = project.Name,
+            Margin = new Thickness(0, 4, 0, 2),
+            Children = { icon, title, unreadIndicator, busySpinner, newChatButton, toggleButton }
+        };
+        header.SetResourceReference(WidthProperty, "TabHeaderContentWidth");
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        tab.Header = header;
+        tab.ContextMenu = BuildProjectContextMenu(project);
+        UpdateProjectHeader(project);
+    }
+
+    private void UpdateProjectHeader(ChatProjectView project)
+    {
+        var tab = GetProjectTab(project.Id);
+        if (tab?.Header is not Panel header)
+        {
+            return;
+        }
+
+        var toggleButton = header.Children.OfType<Border>().FirstOrDefault(border => border.Name == "ProjectToggleButton");
+        if (toggleButton is not null)
+        {
+            toggleButton.ToolTip = project.IsCollapsed ? "Expand project" : "Collapse project";
+            if (toggleButton.Child is Path toggleIcon)
+            {
+                toggleIcon.Data = GetProjectToggleGeometry(project.IsCollapsed);
+            }
+        }
+
+        if (header.Children.OfType<TextBlock>().FirstOrDefault(text => text.Name == "ProjectTitleTextBlock") is { } title)
+        {
+            title.Text = project.Name;
+            title.ToolTip = project.Name;
+        }
+
+        var hasUnread = project.IsCollapsed && GetProjectChats(project.Id).Any(chat => chat.HasUnreadResponse);
+        var isBusy = project.IsCollapsed && GetProjectChats(project.Id).Any(chat => chat.IsPending || chat.HasPendingUserInput);
+
+        if (header.Children.OfType<Ellipse>().FirstOrDefault(ellipse => ellipse.Name == "ProjectUnreadIndicator") is { } unread)
+        {
+            unread.Visibility = hasUnread ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        if (header.Children.OfType<Path>().FirstOrDefault(path => path.Name == "ProjectBusySpinner") is { } spinner)
+        {
+            spinner.Visibility = isBusy ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        header.ToolTip = project.Name;
+        tab.ContextMenu = BuildProjectContextMenu(project);
+    }
+
+    private static Geometry GetProjectToggleGeometry(bool isCollapsed) =>
+        Geometry.Parse(isCollapsed ? "M 3 1 L 7 5 L 3 9" : "M 1 3 L 5 7 L 9 3");
+
+    private FrameworkElement CreateProjectNewChatButton(ChatProjectView project)
+    {
+        var icon = new Wpf.Ui.Controls.SymbolIcon
+        {
+            Symbol = SymbolRegular.AddCircle20,
+            FontSize = 16,
+            Foreground = (Brush)FindResource("DisabledTextBrush"),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var button = new Border
+        {
+            Name = "ProjectNewChatButton",
+            Width = 22,
+            Height = 22,
+            Background = Brushes.Transparent,
+            CornerRadius = new CornerRadius(11),
+            Child = icon,
+            ToolTip = "New chat in project",
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        button.MouseLeftButtonDown += (_, e) =>
+        {
+            e.Handled = true;
+            _ = AddChatAsync(projectId: project.Id);
+        };
+        return button;
+    }
+
+    private static bool IsFromNamedElement(object source, string name)
+    {
+        if (source is not DependencyObject current)
+        {
+            return false;
+        }
+
+        while (current is not null)
+        {
+            if (current is FrameworkElement { Name: var currentName } && currentName == name)
+            {
+                return true;
+            }
+
+            current = VisualTreeHelper.GetParent(current);
+        }
+
+        return false;
+    }
+
+    private void TabStripSplitter_DragDelta(object sender, DragDeltaEventArgs e) => UpdateTabHeaderWidthFromSplitter(sender);
+
+    private void TabStripSplitter_DragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        UpdateTabHeaderWidthFromSplitter(sender);
+        SaveOpenChats();
+    }
+
+    private void UpdateTabHeaderWidthFromSplitter(object sender)
+    {
+        if (sender is GridSplitter splitter && VisualTreeHelper.GetParent(splitter) is Grid grid && grid.ColumnDefinitions.Count > 0)
+        {
+            SetTabHeaderContentWidth(Math.Max(MinTabHeaderWidth, grid.ColumnDefinitions[0].ActualWidth - TabStripChromeWidth));
+        }
+    }
+
+    private void SetTabHeaderContentWidth(double width)
+    {
+        width = Math.Max(MinTabHeaderWidth, width);
+        Resources["TabHeaderContentWidth"] = width;
+        Resources["TabStripColumnWidth"] = new GridLength(width + TabStripChromeWidth);
+    }
+
+    private double GetTabHeaderContentWidth() =>
+        Resources["TabHeaderContentWidth"] is double width ? Math.Max(MinTabHeaderWidth, width) : MinTabHeaderWidth;
+
+    private FrameworkElement CreateProjectBusySpinner()
+    {
+        var rotate = new RotateTransform(0, 7, 7);
+        var spinner = new Path
+        {
+            Name = "ProjectBusySpinner",
+            Width = 14,
+            Height = 14,
+            Margin = new Thickness(5, 0, 5, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Data = Geometry.Parse("M 7,1 A 6,6 0 1 1 2.76,2.76"),
+            Stroke = (Brush)FindResource("AccentBrush"),
+            StrokeThickness = 1.8,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            RenderTransform = rotate,
+            ToolTip = "Project has an active session",
+            Visibility = Visibility.Collapsed
+        };
+
+        rotate.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation
+        {
+            From = 0,
+            To = 360,
+            Duration = TimeSpan.FromMilliseconds(850),
+            RepeatBehavior = RepeatBehavior.Forever
+        });
+        return spinner;
+    }
+
+    private void ToggleProjectCollapsed(ChatProjectView project)
+    {
+        project.IsCollapsed = !project.IsCollapsed;
+        ApplyProjectCollapsedState(project);
+        SaveOpenChats();
+    }
+
+    private void ApplyProjectCollapsedState(ChatProjectView project)
+    {
+        foreach (var tab in GetSessionTabs(project.Id))
+        {
+            tab.Visibility = project.IsCollapsed ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        UpdateProjectHeader(project);
+        if (project.IsCollapsed && CurrentChat is { } current && current.ProjectId == project.Id)
+        {
+            SelectFirstVisibleSession();
+        }
+    }
+
+    private void InsertSessionTab(TabItem tab, string projectId)
+    {
+        var projectTab = GetProjectTab(projectId);
+        if (projectTab is null)
+        {
+            ChatTabs.Items.Add(tab);
+            return;
+        }
+
+        var insertIndex = ChatTabs.Items.IndexOf(projectTab) + 1;
+        while (insertIndex < ChatTabs.Items.Count &&
+               ChatTabs.Items[insertIndex] is TabItem { Tag: ChatSessionView session } &&
+               session.ProjectId == projectId)
+        {
+            insertIndex++;
+        }
+
+        ChatTabs.Items.Insert(insertIndex, tab);
+    }
+
+    private void MoveProjectToIndex(ChatProjectView project, int targetIndex)
+    {
+        var currentIndex = _projects.IndexOf(project);
+        if (currentIndex < 0 || _projects.Count <= 1)
+        {
+            return;
+        }
+
+        targetIndex = Math.Clamp(targetIndex, 0, _projects.Count - 1);
+        if (targetIndex == currentIndex)
+        {
+            return;
+        }
+
+        var projectTab = GetProjectTab(project.Id);
+        if (projectTab is null)
+        {
+            return;
+        }
+
+        var selectedItem = ChatTabs.SelectedItem;
+        var block = new List<TabItem> { projectTab };
+        block.AddRange(GetSessionTabs(project.Id).ToList());
+
+        foreach (var tab in block)
+        {
+            ChatTabs.Items.Remove(tab);
+        }
+
+        _projects.RemoveAt(currentIndex);
+        _projects.Insert(targetIndex, project);
+
+        var insertIndex = GetProjectBlockInsertIndex(targetIndex);
+        foreach (var tab in block)
+        {
+            ChatTabs.Items.Insert(insertIndex++, tab);
+        }
+
+        if (selectedItem is not null && ChatTabs.Items.Contains(selectedItem))
+        {
+            ChatTabs.SelectedItem = selectedItem;
+        }
+        else
+        {
+            SelectFirstVisibleSession();
+        }
+
+        RefreshProjectTabContextMenus();
+        SaveOpenChats();
+    }
+
+    private int GetProjectBlockInsertIndex(int projectIndex)
+    {
+        if (projectIndex <= 0)
+        {
+            return 0;
+        }
+
+        var previousProject = _projects[projectIndex - 1];
+        var previousProjectTab = GetProjectTab(previousProject.Id);
+        if (previousProjectTab is null)
+        {
+            return ChatTabs.Items.Count;
+        }
+
+        var insertIndex = ChatTabs.Items.IndexOf(previousProjectTab) + 1;
+        while (insertIndex < ChatTabs.Items.Count &&
+               ChatTabs.Items[insertIndex] is TabItem { Tag: ChatSessionView session } &&
+               session.ProjectId == previousProject.Id)
+        {
+            insertIndex++;
+        }
+
+        return insertIndex;
+    }
+
+    private void RefreshProjectTabContextMenus()
+    {
+        foreach (var project in _projects)
+        {
+            if (GetProjectTab(project.Id) is { } tab)
+            {
+                tab.ContextMenu = BuildProjectContextMenu(project);
+            }
+        }
+    }
+
+    private IEnumerable<TabItem> GetSessionTabs(string projectId) =>
+        ChatTabs.Items.OfType<TabItem>()
+            .Where(tab => tab.Tag is ChatSessionView chat && chat.ProjectId == projectId);
+
+    private void MoveSessionToProjectIndex(TabItem tab, ChatSessionView chat, int targetIndex)
+    {
+        var sessionTabs = GetSessionTabs(chat.ProjectId).ToList();
+        var currentIndex = sessionTabs.IndexOf(tab);
+        if (currentIndex < 0 || sessionTabs.Count <= 1)
+        {
+            return;
+        }
+
+        targetIndex = Math.Clamp(targetIndex, 0, sessionTabs.Count - 1);
+        if (targetIndex == currentIndex)
+        {
+            return;
+        }
+
+        var projectTab = GetProjectTab(chat.ProjectId);
+        if (projectTab is null)
+        {
+            return;
+        }
+
+        ChatTabs.Items.Remove(tab);
+        sessionTabs.RemoveAt(currentIndex);
+
+        if (targetIndex <= 0)
+        {
+            var projectIndex = ChatTabs.Items.IndexOf(projectTab);
+            ChatTabs.Items.Insert(projectIndex + 1, tab);
+        }
+        else if (targetIndex >= sessionTabs.Count)
+        {
+            var insertIndex = ChatTabs.Items.IndexOf(projectTab) + 1;
+            while (insertIndex < ChatTabs.Items.Count &&
+                   ChatTabs.Items[insertIndex] is TabItem { Tag: ChatSessionView session } &&
+                   session.ProjectId == chat.ProjectId)
+            {
+                insertIndex++;
+            }
+            ChatTabs.Items.Insert(insertIndex, tab);
+        }
+        else
+        {
+            var targetTab = sessionTabs[targetIndex];
+            var insertIndex = ChatTabs.Items.IndexOf(targetTab);
+            ChatTabs.Items.Insert(insertIndex, tab);
+        }
+
+        ChatTabs.SelectedItem = tab;
+        tab.BringIntoView();
+        ChatTabs.UpdateLayout();
+        RefreshSessionTabContextMenus();
+        SaveOpenChats();
+    }
+
+    private IEnumerable<ChatSessionView> GetProjectChats(string projectId) =>
+        ChatTabs.Items.OfType<TabItem>()
+            .Select(tab => tab.Tag as ChatSessionView)
+            .Where(chat => chat is not null && chat.ProjectId == projectId)!;
+
+    private TabItem? GetProjectTab(string projectId) =>
+        ChatTabs.Items.OfType<TabItem>()
+            .FirstOrDefault(tab => tab.Tag is ChatProjectView project && project.Id == projectId);
+
+    private bool IsProjectCollapsed(string projectId) =>
+        _projects.FirstOrDefault(project => project.Id == projectId)?.IsCollapsed == true;
+
+    private string GetSelectedProjectId()
+    {
+        if (CurrentChat?.ProjectId is { } currentProjectId)
+        {
+            return currentProjectId;
+        }
+
+        if (ChatTabs.SelectedItem is TabItem { Tag: ChatProjectView project })
+        {
+            return project.Id;
+        }
+
+        return PersistedChatProject.DefaultProjectId;
+    }
+
+    private void SelectFirstVisibleSession()
+    {
+        var next = ChatTabs.Items.OfType<TabItem>()
+            .FirstOrDefault(tab => tab.Visibility == Visibility.Visible && tab.Tag is ChatSessionView);
+        if (next is not null)
+        {
+            ChatTabs.SelectedItem = next;
+        }
     }
 
     /// <summary>
@@ -636,17 +1177,20 @@ public partial class MainWindow : Window
     /// adds them to the tab strip.  Does <em>not</em> initialize the embedded browser — call
     /// <see cref="InitializeChatBrowserAsync"/> afterwards.
     /// </summary>
-    private ChatSessionView CreateChatTabItem(PersistedChatSession? persisted, bool select)
+    private ChatSessionView CreateChatTabItem(PersistedChatSession? persisted, bool select, string? projectId = null)
     {
-        var chat = new ChatSessionView(string.IsNullOrWhiteSpace(persisted?.Title) ? $"Chat {ChatTabs.Items.Count + 1}" : persisted!.Title)
+        var effectiveProjectId = EnsureProject(projectId ?? persisted?.ProjectId ?? GetSelectedProjectId()).Id;
+        var chat = new ChatSessionView(string.IsNullOrWhiteSpace(persisted?.Title) ? $"Chat {ChatTabs.Items.OfType<TabItem>().Count(tab => tab.Tag is ChatSessionView) + 1}" : persisted!.Title)
         {
+            ProjectId = effectiveProjectId,
             CopilotSessionId = persisted?.CopilotSessionId,
             IsSessionMissing = persisted?.IsSessionMissing == true,
             SystemPrompt = persisted is null
                 ? (string.IsNullOrWhiteSpace(_settings.DefaultSystemPrompt) ? null : _settings.DefaultSystemPrompt)
                 : persisted.SystemPrompt,
             SelectedModelId = string.IsNullOrWhiteSpace(persisted?.SelectedModelId) ? _settings.SelectedModelId : persisted!.SelectedModelId,
-            SelectedReasoningEffort = string.IsNullOrWhiteSpace(persisted?.SelectedReasoningEffort) ? _settings.SelectedReasoningEffort : persisted!.SelectedReasoningEffort
+            SelectedReasoningEffort = string.IsNullOrWhiteSpace(persisted?.SelectedReasoningEffort) ? _settings.SelectedReasoningEffort : persisted!.SelectedReasoningEffort,
+            AutoCollapsePreviousArticle = persisted?.AutoCollapsePreviousArticle == true
         };
         if (persisted is not null)
         {
@@ -685,12 +1229,21 @@ public partial class MainWindow : Window
         }
         tabContent.SendRequested += prompt => _ = SendChatAsync(chat, prompt);
         tabContent.StopRequested += () => _ = StopChatAsync(chat);
+        tabContent.AutoCollapsePreviousArticleChanged += enabled =>
+        {
+            chat.AutoCollapsePreviousArticle = enabled;
+            SaveOpenChats();
+        };
         _tabContents[chat] = tabContent;
+        tabContent.SetAutoCollapsePreviousArticle(chat.AutoCollapsePreviousArticle);
         tabContent.SetState(chat.IsPending, chat.IsSessionMissing);
 
         var tab = new TabItem { Content = tabContent, Tag = chat };
         SetTabHeader(tab, chat.Title);
-        ChatTabs.Items.Add(tab);
+        InsertSessionTab(tab, effectiveProjectId);
+        tab.ContextMenu = BuildTabContextMenu(tab);
+        RefreshSessionTabContextMenus();
+        tab.Visibility = IsProjectCollapsed(effectiveProjectId) ? Visibility.Collapsed : Visibility.Visible;
         if (select)
         {
             ChatTabs.SelectedItem = tab;
@@ -808,6 +1361,10 @@ public partial class MainWindow : Window
     {
         var hadPersistedState = _chatSessionStore.Exists;
         var state = _chatSessionStore.Load();
+        if (state.TabHeaderWidth > 0)
+        {
+            SetTabHeaderContentWidth(state.TabHeaderWidth);
+        }
         if (!hadPersistedState)
         {
             await AddChatAsync();
@@ -818,9 +1375,33 @@ public partial class MainWindow : Window
         _isRestoringChats = true;
         try
         {
+            var projects = state.Projects.Count == 0
+                ? new List<PersistedChatProject> { new() }
+                : state.Projects;
+            if (projects.All(project => project.Id != PersistedChatProject.DefaultProjectId))
+            {
+                projects.Insert(0, new PersistedChatProject());
+            }
+
+            foreach (var projectId in state.Sessions
+                         .Select(session => string.IsNullOrWhiteSpace(session.ProjectId) ? PersistedChatProject.DefaultProjectId : session.ProjectId!)
+                         .Distinct(StringComparer.OrdinalIgnoreCase)
+                         .Where(projectId => projects.All(project => !project.Id.Equals(projectId, StringComparison.OrdinalIgnoreCase))))
+            {
+                projects.Add(new PersistedChatProject { Id = projectId, Name = projectId });
+            }
+
+            foreach (var project in projects)
+            {
+                EnsureProject(project.Id, project.Name, project.IsCollapsed);
+            }
+
             // Phase 1: Create all tab shells synchronously so the tab strip is fully
             // populated before any slow browser-initialization awaits begin.
-            foreach (var saved in state.Sessions)
+            foreach (var saved in state.Sessions.OrderBy(session =>
+                         _projects.FindIndex(project => project.Id == (string.IsNullOrWhiteSpace(session.ProjectId)
+                             ? PersistedChatProject.DefaultProjectId
+                             : session.ProjectId))))
             {
                 CreateChatTabItem(saved, select: false);
             }
@@ -853,8 +1434,8 @@ public partial class MainWindow : Window
 
     private void ActivateFirstRestoredChat(IReadOnlyList<TabItem> tabs)
     {
-        var startupTab = tabs.FirstOrDefault(tab => (tab.Tag as ChatSessionView)?.IsSessionMissing == false)
-            ?? tabs.FirstOrDefault();
+        var startupTab = tabs.FirstOrDefault(tab => tab.Visibility == Visibility.Visible && (tab.Tag as ChatSessionView)?.IsSessionMissing == false)
+            ?? tabs.FirstOrDefault(tab => tab.Visibility == Visibility.Visible && tab.Tag is ChatSessionView);
         if (startupTab is null)
         {
             UpdateInputState();
@@ -909,8 +1490,15 @@ public partial class MainWindow : Window
             .ToList();
         var state = new PersistedChatState
         {
+            Projects = _projects.Select(project => new PersistedChatProject
+            {
+                Id = project.Id,
+                Name = project.Name,
+                IsCollapsed = project.IsCollapsed
+            }).ToList(),
             Sessions = sessions,
-            SelectedSessionId = CurrentChat?.CopilotSessionId
+            SelectedSessionId = CurrentChat?.CopilotSessionId,
+            TabHeaderWidth = GetTabHeaderContentWidth()
         };
 
         _chatSessionStore.Save(state);
@@ -935,10 +1523,12 @@ public partial class MainWindow : Window
         new()
         {
             Title = chat.Title,
+            ProjectId = chat.ProjectId,
             CopilotSessionId = chat.CopilotSessionId,
             SystemPrompt = chat.SystemPrompt,
             SelectedModelId = chat.SelectedModelId,
             SelectedReasoningEffort = chat.SelectedReasoningEffort,
+            AutoCollapsePreviousArticle = chat.AutoCollapsePreviousArticle,
             IsSessionMissing = chat.IsSessionMissing,
             Messages = chat.Messages.Select(message => new PersistedChatMessage
             {
@@ -970,7 +1560,7 @@ public partial class MainWindow : Window
                 RenameTab(tab);
             }
         };
-        Grid.SetColumn(titleBlock, 0);
+        Grid.SetColumn(titleBlock, 1);
 
         var unreadIndicator = new Ellipse
         {
@@ -1026,13 +1616,12 @@ public partial class MainWindow : Window
                 closeButton
             }
         };
-        Grid.SetColumn(unreadIndicator, 1);
-        Grid.SetColumn(closeSlot, 2);
+        Grid.SetColumn(unreadIndicator, 2);
+        Grid.SetColumn(closeSlot, 3);
 
         var header = new Grid
         {
             ToolTip = title,
-            Width = 184,
             Children =
             {
                 titleBlock,
@@ -1040,12 +1629,13 @@ public partial class MainWindow : Window
                 closeSlot
             }
         };
+        header.SetResourceReference(WidthProperty, "TabHeaderContentWidth");
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(21) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         tab.Header = header;
         tab.MouseDoubleClick -= Tab_MouseDoubleClick;
-        tab.ContextMenu = BuildTabContextMenu(tab);
     }
 
     private FrameworkElement CreateTabBusySpinner()
@@ -1202,6 +1792,11 @@ public partial class MainWindow : Window
         {
             closeItem.IsEnabled = !isBusy && !inputRequired;
         }
+
+        if (_projects.FirstOrDefault(project => project.Id == chat.ProjectId) is { } project)
+        {
+            UpdateProjectHeader(project);
+        }
     }
 
     private void SetTabUnreadState(ChatSessionView chat, bool hasUnreadResponse)
@@ -1230,21 +1825,259 @@ public partial class MainWindow : Window
         {
             indicator.Visibility = hasUnreadResponse ? Visibility.Visible : Visibility.Collapsed;
         }
+
+        if (_projects.FirstOrDefault(project => project.Id == chat.ProjectId) is { } project)
+        {
+            UpdateProjectHeader(project);
+        }
     }
 
     private ContextMenu BuildTabContextMenu(TabItem tab)
     {
         var menu = new ContextMenu();
-        var renameItem = new MenuItem { Header = "Rename" };
+        var renameItem = new MenuItem
+        {
+            Header = "Rename",
+            Icon = CreateMenuIcon(SymbolRegular.CircleEdit20)
+        };
         renameItem.Click += (_, _) => RenameTab(tab);
         menu.Items.Add(renameItem);
-        var closeItem = new MenuItem { Header = "Close" };
+        var newProjectItem = new MenuItem
+        {
+            Header = "New project...",
+            Icon = CreateMenuIcon(SymbolRegular.FolderAdd16)
+        };
+        newProjectItem.Click += (_, _) => CreateProject();
+        menu.Items.Add(newProjectItem);
+        if (tab.Tag is ChatSessionView chat)
+        {
+            var moveItem = new MenuItem
+            {
+                Header = "Move to project",
+                Icon = CreateMenuIcon(SymbolRegular.FolderArrowRight20)
+            };
+            foreach (var project in _projects)
+            {
+                var projectItem = new MenuItem
+                {
+                    Header = project.Name,
+                    Icon = CreateMenuIcon(SymbolRegular.Folder16),
+                    IsChecked = chat.ProjectId == project.Id
+                };
+                projectItem.Click += (_, _) => MoveSessionToProject(tab, chat, project.Id);
+                moveItem.Items.Add(projectItem);
+            }
+            menu.Items.Add(moveItem);
+
+            menu.Items.Add(new Separator());
+
+            var sessionTabs = GetSessionTabs(chat.ProjectId).ToList();
+            var sessionIndex = sessionTabs.IndexOf(tab);
+            var canMoveUp = sessionIndex > 0;
+            var canMoveDown = sessionIndex >= 0 && sessionIndex < sessionTabs.Count - 1;
+
+            var moveTopItem = new MenuItem
+            {
+                Header = "Move to top",
+                IsEnabled = canMoveUp,
+                Icon = CreateMenuIcon(SymbolRegular.ChevronDoubleUp20)
+            };
+            moveTopItem.Click += (_, _) => MoveSessionToProjectIndex(tab, chat, 0);
+            menu.Items.Add(moveTopItem);
+
+            var moveUpItem = new MenuItem
+            {
+                Header = "Move up",
+                IsEnabled = canMoveUp,
+                Icon = CreateMenuIcon(SymbolRegular.ChevronCircleUp20)
+            };
+            moveUpItem.Click += (_, _) => MoveSessionToProjectIndex(tab, chat, sessionIndex - 1);
+            menu.Items.Add(moveUpItem);
+
+            var moveDownItem = new MenuItem
+            {
+                Header = "Move down",
+                IsEnabled = canMoveDown,
+                Icon = CreateMenuIcon(SymbolRegular.ChevronCircleDown20)
+            };
+            moveDownItem.Click += (_, _) => MoveSessionToProjectIndex(tab, chat, sessionIndex + 1);
+            menu.Items.Add(moveDownItem);
+
+            var moveBottomItem = new MenuItem
+            {
+                Header = "Move to bottom",
+                IsEnabled = canMoveDown,
+                Icon = CreateMenuIcon(SymbolRegular.ChevronDoubleDown20)
+            };
+            moveBottomItem.Click += (_, _) => MoveSessionToProjectIndex(tab, chat, sessionTabs.Count - 1);
+            menu.Items.Add(moveBottomItem);
+        }
+        var closeItem = new MenuItem
+        {
+            Header = "Close",
+            Icon = CreateMenuIcon(SymbolRegular.Dismiss20)
+        };
         closeItem.Name = "CloseTabMenuItem";
         closeItem.IsEnabled = tab.Tag is not ChatSessionView { IsPending: true } &&
                               tab.Tag is not ChatSessionView { HasPendingUserInput: true };
         closeItem.Click += (_, _) => _ = CloseTabAsync(tab);
         menu.Items.Add(closeItem);
         return menu;
+    }
+
+    private ContextMenu BuildProjectContextMenu(ChatProjectView project)
+    {
+        var menu = new ContextMenu();
+        var collapseItem = new MenuItem
+        {
+            Header = project.IsCollapsed ? "Expand" : "Collapse",
+            Icon = CreateMenuIcon(project.IsCollapsed ? SymbolRegular.ChevronCircleRight20 : SymbolRegular.ChevronCircleDown20)
+        };
+        collapseItem.Click += (_, _) => ToggleProjectCollapsed(project);
+        menu.Items.Add(collapseItem);
+
+        var newChatItem = new MenuItem
+        {
+            Header = "New chat in project",
+            Icon = CreateMenuIcon(SymbolRegular.Chat16)
+        };
+        newChatItem.Click += (_, _) => _ = AddChatAsync(projectId: project.Id);
+        menu.Items.Add(newChatItem);
+
+        var newProjectItem = new MenuItem
+        {
+            Header = "New project...",
+            Icon = CreateMenuIcon(SymbolRegular.FolderAdd16)
+        };
+        newProjectItem.Click += (_, _) => CreateProject();
+        menu.Items.Add(newProjectItem);
+
+        var renameItem = new MenuItem
+        {
+            Header = "Rename project...",
+            Icon = CreateMenuIcon(SymbolRegular.CircleEdit20)
+        };
+        renameItem.Click += (_, _) => RenameProject(project);
+        menu.Items.Add(renameItem);
+
+        menu.Items.Add(new Separator());
+
+        var projectIndex = _projects.IndexOf(project);
+        var canMoveUp = projectIndex > 0;
+        var canMoveDown = projectIndex >= 0 && projectIndex < _projects.Count - 1;
+
+        var moveTopItem = new MenuItem
+        {
+            Header = "Move to top",
+            IsEnabled = canMoveUp,
+            Icon = CreateMenuIcon(SymbolRegular.ChevronDoubleUp20)
+        };
+        moveTopItem.Click += (_, _) => MoveProjectToIndex(project, 0);
+        menu.Items.Add(moveTopItem);
+
+        var moveUpItem = new MenuItem
+        {
+            Header = "Move up",
+            IsEnabled = canMoveUp,
+            Icon = CreateMenuIcon(SymbolRegular.ChevronCircleUp20)
+        };
+        moveUpItem.Click += (_, _) => MoveProjectToIndex(project, projectIndex - 1);
+        menu.Items.Add(moveUpItem);
+
+        var moveDownItem = new MenuItem
+        {
+            Header = "Move down",
+            IsEnabled = canMoveDown,
+            Icon = CreateMenuIcon(SymbolRegular.ChevronCircleDown20)
+        };
+        moveDownItem.Click += (_, _) => MoveProjectToIndex(project, projectIndex + 1);
+        menu.Items.Add(moveDownItem);
+
+        var moveBottomItem = new MenuItem
+        {
+            Header = "Move to bottom",
+            IsEnabled = canMoveDown,
+            Icon = CreateMenuIcon(SymbolRegular.ChevronDoubleDown20)
+        };
+        moveBottomItem.Click += (_, _) => MoveProjectToIndex(project, _projects.Count - 1);
+        menu.Items.Add(moveBottomItem);
+        return menu;
+    }
+
+    private FrameworkElement CreateMenuIcon(SymbolRegular symbol)
+    {
+        return new Wpf.Ui.Controls.SymbolIcon
+        {
+            Symbol = symbol,
+            FontSize = 16,
+            Width = 18,
+            Height = 18,
+            Foreground = (Brush)FindResource("MutedTextBrush"),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+    }
+
+    private void CreateProject()
+    {
+        var dialog = new RenameTabWindow("", "New Project", "Project name", "Create") { Owner = this };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        var project = EnsureProject(Guid.NewGuid().ToString("N"), dialog.TabTitle, isCollapsed: false);
+        RefreshSessionTabContextMenus();
+        SaveOpenChats();
+        GetProjectTab(project.Id)?.BringIntoView();
+    }
+
+    private void RenameProject(ChatProjectView project)
+    {
+        var dialog = new RenameTabWindow(project.Name, "Rename Project", "Project name", "Rename") { Owner = this };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        project.Name = dialog.TabTitle;
+        UpdateProjectHeader(project);
+        RefreshSessionTabContextMenus();
+        SaveOpenChats();
+    }
+
+    private void RefreshSessionTabContextMenus()
+    {
+        foreach (var tab in ChatTabs.Items.OfType<TabItem>())
+        {
+            if (tab.Tag is ChatSessionView)
+            {
+                tab.ContextMenu = BuildTabContextMenu(tab);
+            }
+        }
+    }
+
+    private void MoveSessionToProject(TabItem tab, ChatSessionView chat, string projectId)
+    {
+        if (chat.ProjectId == projectId)
+        {
+            return;
+        }
+
+        ChatTabs.Items.Remove(tab);
+        chat.ProjectId = projectId;
+        InsertSessionTab(tab, projectId);
+        tab.Visibility = IsProjectCollapsed(projectId) ? Visibility.Collapsed : Visibility.Visible;
+        if (tab.Visibility == Visibility.Visible)
+        {
+            ChatTabs.SelectedItem = tab;
+        }
+        else
+        {
+            SelectFirstVisibleSession();
+        }
+        RefreshSessionTabContextMenus();
+        SaveOpenChats();
     }
 
     private async Task CloseTabAsync(TabItem tab)
@@ -1264,6 +2097,7 @@ public partial class MainWindow : Window
             _browserInitializationTasks.Remove(chat);
             _sessionResumeTasks.Remove(chat);
             _resumedSessions.Remove(chat);
+            _forceClosedArticleIds.Remove(chat);
             if (_tabContents.TryGetValue(chat, out var tabContent))
             {
                 tabContent.Cleanup();
@@ -1297,6 +2131,7 @@ public partial class MainWindow : Window
         {
             chat.Title = dialog.TabTitle;
             SetTabHeader(tab, chat.Title);
+            tab.ContextMenu = BuildTabContextMenu(tab);
             SaveOpenChats();
         }
     }
@@ -1841,6 +2676,52 @@ public partial class MainWindow : Window
     private IEnumerable<ChatMessage> FilterMessages(IEnumerable<ChatMessage> messages) =>
         _showDetailMessages ? messages : messages.Where(m => !DetailMessageKinds.Contains(m.Kind));
 
+    private void StagePreviousArticleAutoCollapse(ChatSessionView chat)
+    {
+        if (!chat.AutoCollapsePreviousArticle)
+        {
+            return;
+        }
+
+        if (GetLastTopLevelArticleId(FilterMessages(chat.Messages)) is not { } articleId)
+        {
+            return;
+        }
+
+        if (!_forceClosedArticleIds.TryGetValue(chat, out var ids))
+        {
+            ids = [];
+            _forceClosedArticleIds[chat] = ids;
+        }
+
+        ids.Add(articleId);
+    }
+
+    private static string? GetLastTopLevelArticleId(IEnumerable<ChatMessage> messages)
+    {
+        string? currentUserId = null;
+        string? lastArticleId = null;
+
+        foreach (var message in messages)
+        {
+            if (message.Kind is ChatMessageKind.User)
+            {
+                if (currentUserId is not null)
+                {
+                    lastArticleId = currentUserId;
+                }
+
+                currentUserId = message.Id;
+            }
+            else if (currentUserId is null)
+            {
+                lastArticleId = message.Id;
+            }
+        }
+
+        return currentUserId ?? lastArticleId;
+    }
+
     private async Task RenderChatAsync(ChatSessionView chat, long revision)
     {
         if (chat.Browser.CoreWebView2 is null)
@@ -1871,7 +2752,7 @@ public partial class MainWindow : Window
         // and preserve the scroll position.
         try
         {
-            var payload = BuildBrowserMessagePatches(messages).ToArray();
+            var payload = BuildBrowserMessagePatches(chat, messages).ToArray();
             var jsonPatch = System.Text.Json.JsonSerializer.Serialize(payload);
             if (!IsLatestRender(chat, revision))
             {
@@ -1959,6 +2840,11 @@ public partial class MainWindow : Window
                                 });
                             }
                         }
+
+                        if (patch.ForceClosed) {
+                            var forceClosedDetails = node.querySelector('details');
+                            if (forceClosedDetails) forceClosedDetails.open = false;
+                        }
                         return node;
                     }
 
@@ -1983,6 +2869,7 @@ public partial class MainWindow : Window
                     el.scrollTop = atBottom ? el.scrollHeight : savedY;
                 })()
             """);
+            ClearAppliedForceClosedArticleIds(chat, payload);
         }
         catch
         {
@@ -2025,12 +2912,31 @@ public partial class MainWindow : Window
             completed);
     }
 
-    private sealed record BrowserMessagePatch(string Id, string Signature, string Html);
+    private void ClearAppliedForceClosedArticleIds(ChatSessionView chat, IReadOnlyList<BrowserMessagePatch> payload)
+    {
+        if (!_forceClosedArticleIds.TryGetValue(chat, out var ids))
+        {
+            return;
+        }
 
-    private IEnumerable<BrowserMessagePatch> BuildBrowserMessagePatches(IReadOnlyList<ChatMessage> messages)
+        foreach (var id in payload.Where(patch => patch.ForceClosed).Select(patch => patch.Id))
+        {
+            ids.Remove(id);
+        }
+
+        if (ids.Count == 0)
+        {
+            _forceClosedArticleIds.Remove(chat);
+        }
+    }
+
+    private sealed record BrowserMessagePatch(string Id, string Signature, string Html, bool ForceClosed);
+
+    private IEnumerable<BrowserMessagePatch> BuildBrowserMessagePatches(ChatSessionView chat, IReadOnlyList<ChatMessage> messages)
     {
         ChatMessage? currentUser = null;
         var responses = new List<ChatMessage>();
+        _forceClosedArticleIds.TryGetValue(chat, out var forceClosedIds);
 
         foreach (var message in messages)
         {
@@ -2038,7 +2944,7 @@ public partial class MainWindow : Window
             {
                 if (currentUser is not null)
                 {
-                    yield return BuildTurnPatch(currentUser, responses);
+                    yield return BuildTurnPatch(currentUser, responses, forceClosedIds);
                     responses.Clear();
                 }
 
@@ -2049,7 +2955,8 @@ public partial class MainWindow : Window
                 yield return new BrowserMessagePatch(
                     message.Id,
                     BuildRenderSignature(message),
-                    _htmlRenderer.RenderMessageFragment(message, _isDarkTheme));
+                    _htmlRenderer.RenderMessageFragment(message, _isDarkTheme),
+                    forceClosedIds?.Contains(message.Id) == true);
             }
             else
             {
@@ -2059,18 +2966,19 @@ public partial class MainWindow : Window
 
         if (currentUser is not null)
         {
-            yield return BuildTurnPatch(currentUser, responses);
+            yield return BuildTurnPatch(currentUser, responses, forceClosedIds);
         }
     }
 
-    private BrowserMessagePatch BuildTurnPatch(ChatMessage userMessage, IReadOnlyList<ChatMessage> responses)
+    private BrowserMessagePatch BuildTurnPatch(ChatMessage userMessage, IReadOnlyList<ChatMessage> responses, IReadOnlySet<string>? forceClosedIds)
     {
         var signature = string.Join("\n---turn-message---\n",
             responses.Prepend(userMessage).Select(BuildRenderSignature));
         return new BrowserMessagePatch(
             userMessage.Id,
             signature,
-            _htmlRenderer.RenderTurnFragment(userMessage, responses, _isDarkTheme));
+            _htmlRenderer.RenderTurnFragment(userMessage, responses, _isDarkTheme),
+            forceClosedIds?.Contains(userMessage.Id) == true);
     }
 
     private void ShowDetailsCheckBox_Click(object sender, RoutedEventArgs e)
@@ -2118,6 +3026,15 @@ public partial class MainWindow : Window
 
         ApplyTheme(dark);
         UpdateThemeIcon();
+    }
+
+    private void SystemEvents_UserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
+    {
+        if (_settings.Theme == AppThemeMode.System &&
+            e.Category is UserPreferenceCategory.General or UserPreferenceCategory.VisualStyle)
+        {
+            Dispatcher.Invoke(ApplyThemeFromMode);
+        }
     }
 
     private void UpdateThemeIcon()
@@ -2225,5 +3142,12 @@ public partial class MainWindow : Window
         var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color));
         Resources[key] = brush;
         Application.Current.Resources[key] = brush;
+    }
+
+    private sealed class ChatProjectView(string id, string name, bool isCollapsed)
+    {
+        public string Id { get; } = id;
+        public string Name { get; set; } = name;
+        public bool IsCollapsed { get; set; } = isCollapsed;
     }
 }

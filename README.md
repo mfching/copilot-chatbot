@@ -7,7 +7,9 @@ It provides a tabbed chat UI, session restore, model selection, reasoning effort
 ## Features
 
 - Multi-tab chat sessions with per-tab system prompts
+- Two-level chat grouping: projects contain child sessions, while ungrouped sessions live under the Default project
 - Saved chat sessions restored on startup, with debounced background persistence and default scroll-to-bottom positioning
+- Icon-enhanced tab context menus for renaming, closing, moving sessions between projects, and reordering tabs
 - Per-tab status indicators:
   - Busy spinner while Copilot is thinking or running tools
   - Typing indicator while a response is streaming
@@ -18,9 +20,13 @@ It provides a tabbed chat UI, session restore, model selection, reasoning effort
 - Chat navigation controls:
   - Scroll to top and bottom
   - Jump to previous and next user question
+  - Expand or collapse all message articles
+  - Optional per-session auto-collapse of the previous top-level article when sending a new prompt
 - Turn-based response display, where all responses for a prompt are grouped under the user message
 - Expanding any collapsed user turn opens the latest assistant response in that turn when the nested articles are all collapsed
 - User messages include an inline copy button for copying the original prompt text to the Windows clipboard
+- Project-level tab groups can be collapsed and restored with their collapsed/expanded state
+- Project tab groups and child session tabs can be moved to top, moved up/down, or moved to bottom within their current level
 - Activity bar for transient Copilot status such as reasoning, tool execution, background agent progress, and shortcut activity
 - Tool and permission workflow:
   - Folder access rules (read/read-write)
@@ -40,7 +46,7 @@ It provides a tabbed chat UI, session restore, model selection, reasoning effort
 - Local slash shortcuts for inspecting or changing runtime state
 - Extra agent and skill folder configuration
 - Scheduled automation tasks with cron expressions, manual runs, run history, optional pre/post commands, Copilot steps, and file/HTTP/named-pipe handoff
-- Light, dark, and follow-the-sun theme options
+- Light, dark, system, and follow-the-sun theme options, including themed capability dialogs and chat scrollbars
 - Optional Windows tray notifications when Copilot needs user input
 - Optional debug logging
 - Markdown rendering, collapsible message cards, response pop-out windows, embedded HTML previews, and iframe preview pop-out windows
@@ -162,6 +168,8 @@ If debug logging is enabled, logs are written to:
 - `%APPDATA%\CopilotChatbot\debug-YYYY-MM-DD.log`
 
 Sensitive values in `settings.json` are encrypted only when a settings password is active. Otherwise, the GitHub token and user secret values are stored as plaintext.
+
+Chat sessions are still saved as a flat session list for backward compatibility. Group-aware versions add project metadata, project order, per-session project ids, per-project collapsed state, per-session tab order, and per-session UI preferences such as previous-article auto-collapse; older app versions can ignore that metadata and open the same sessions as unrelated flat tabs.
 
 ## MCP Notes
 
