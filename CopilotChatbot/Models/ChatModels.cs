@@ -47,6 +47,7 @@ public sealed record SessionCapabilitiesSnapshot(
 public sealed class ChatSessionView
 {
     public string Title { get; set; }
+    public string ProjectId { get; set; } = PersistedChatProject.DefaultProjectId;
     public string? CopilotSessionId { get; set; }
     public bool IsSessionMissing { get; set; }
     public bool IsPageInitialized { get; set; }
@@ -58,6 +59,7 @@ public sealed class ChatSessionView
     public string? SelectedModelId { get; set; }
     public string? SelectedReasoningEffort { get; set; }
     public string? LastStatus { get; set; }
+    public bool AutoCollapsePreviousArticle { get; set; }
     public ObservableCollection<ChatMessage> Messages { get; } = [];
     public WebView2 Browser { get; } = new();
 
@@ -69,17 +71,30 @@ public sealed class ChatSessionView
 
 public sealed class PersistedChatState
 {
+    public List<PersistedChatProject> Projects { get; set; } = [];
     public List<PersistedChatSession> Sessions { get; set; } = [];
     public string? SelectedSessionId { get; set; }
+    public double TabHeaderWidth { get; set; }
+}
+
+public sealed class PersistedChatProject
+{
+    public const string DefaultProjectId = "default";
+
+    public string Id { get; set; } = DefaultProjectId;
+    public string Name { get; set; } = "Default";
+    public bool IsCollapsed { get; set; }
 }
 
 public sealed class PersistedChatSession
 {
     public string Title { get; set; } = "";
+    public string? ProjectId { get; set; }
     public string? CopilotSessionId { get; set; }
     public string? SystemPrompt { get; set; }
     public string? SelectedModelId { get; set; }
     public string? SelectedReasoningEffort { get; set; }
+    public bool AutoCollapsePreviousArticle { get; set; }
     public bool IsSessionMissing { get; set; }
     public List<PersistedChatMessage> Messages { get; set; } = [];
 }

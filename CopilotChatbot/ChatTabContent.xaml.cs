@@ -17,9 +17,13 @@ public partial class ChatTabContent : UserControl
     /// <summary>Raised when the user clicks Stop.</summary>
     public event Action? StopRequested;
 
+    /// <summary>Raised when the user toggles previous-article auto-collapse for this tab.</summary>
+    public event Action<bool>? AutoCollapsePreviousArticleChanged;
+
     private Storyboard? _beamStoryboard;
     private Storyboard? _dotStoryboard;
     private Storyboard? _loadingStoryboard;
+    private bool _updatingAutoCollapseToggle;
 
     private const string PreviousQuestionScript = """
         (function() {
@@ -142,6 +146,22 @@ public partial class ChatTabContent : UserControl
         }
     }
 
+    public void SetAutoCollapsePreviousArticle(bool enabled)
+    {
+        _updatingAutoCollapseToggle = true;
+        try
+        {
+            AutoCollapsePreviousBtn.IsChecked = enabled;
+            AutoCollapsePreviousBtn.ToolTip = enabled
+                ? "Auto-collapse previous article on send is on"
+                : "Auto-collapse previous article on send is off";
+        }
+        finally
+        {
+            _updatingAutoCollapseToggle = false;
+        }
+    }
+
     /// <summary>Stops all running animations (call before the tab is closed).</summary>
     public void Cleanup()
     {
@@ -203,6 +223,20 @@ public partial class ChatTabContent : UserControl
     {
         if (BrowserHost.Content is WebView2 { CoreWebView2: not null } browser)
             _ = browser.ExecuteScriptAsync(CollapseAllArticlesScript);
+    }
+
+    private void AutoCollapsePrevious_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_updatingAutoCollapseToggle)
+        {
+            return;
+        }
+
+        var enabled = AutoCollapsePreviousBtn.IsChecked == true;
+        AutoCollapsePreviousBtn.ToolTip = enabled
+            ? "Auto-collapse previous article on send is on"
+            : "Auto-collapse previous article on send is off";
+        AutoCollapsePreviousArticleChanged?.Invoke(enabled);
     }
 
     private void TryRaiseSend()

@@ -63,6 +63,10 @@ public sealed class LocalShortcutService : ILocalShortcutService
             "Ask Copilot to create an implementation plan before coding.",
             ExecutePlanShortcutAsync),
         new(
+            "/reset",
+            "Reset the current Copilot conversation context.",
+            ExecuteResetShortcutAsync),
+        new(
             "/usage",
             "Show the latest Copilot usage and quota snapshot.",
             ExecuteQuotaShortcutAsync)
@@ -245,6 +249,39 @@ Instructions:
             : "/plan " + invocation.ArgumentText.Trim();
 
         return Task.FromResult(LocalShortcutResult.ForPrompt(prompt, visiblePrompt));
+    }
+
+    private async Task<LocalShortcutResult> ExecuteResetShortcutAsync(LocalShortcutInvocation invocation)
+    {
+        if (!string.IsNullOrWhiteSpace(invocation.ArgumentText))
+        {
+            return new LocalShortcutResult(
+                ChatMessageKind.Error,
+                "Usage: /reset\n\nResets the current Copilot conversation context for this tab.");
+        }
+
+        StatusChanged?.Invoke(invocation.Chat, "Resetting session context...");
+        try
+        {
+            await _copilot.CloseSessionAsync(invocation.Chat);
+            invocation.Chat.CopilotSessionId = null;
+            invocation.Chat.IsSessionMissing = false;
+            invocation.Chat.LastStatus = null;
+
+            return new LocalShortcutResult(
+                ChatMessageKind.System,
+                "Session reset\n\nThe visible chat history was kept, but the next message will start a fresh Copilot conversation context for this tab.");
+        }
+        catch (Exception ex)
+        {
+            return new LocalShortcutResult(
+                ChatMessageKind.Error,
+                "Failed to reset the current Copilot session.\n\n" + ex.Message);
+        }
+        finally
+        {
+            StatusChanged?.Invoke(invocation.Chat, null);
+        }
     }
 
     private async Task<LocalShortcutResult> ExecuteQuotaShortcutAsync(LocalShortcutInvocation invocation)
