@@ -45,6 +45,9 @@ public sealed class HtmlRenderer
         ["--prompt-head"]  = dark ? "#2A1A04" : "#FFF7ED",
         ["--prompt-avatar"] = dark ? "#B45309" : "#F97316",
         ["--prompt-label"] = dark ? "#FDBA74" : "#C2410C",
+        ["--prompt-answered-head"]  = dark ? "#0F2A1D" : "#ECFDF3",
+        ["--prompt-answered-avatar"] = dark ? "#15803D" : "#16A34A",
+        ["--prompt-answered-label"] = dark ? "#86EFAC" : "#166534",
         ["--err-head"]    = dark ? "#2D0E0E" : "#FFF5F5",
         ["--err-avatar"]  = dark ? "#9B1C1C" : "#EF4444",
         ["--err-label"]   = dark ? "#FCA5A5" : "#991B1B",
@@ -106,10 +109,11 @@ details[open] > summary.head .preview { display:none; }
 .dur { font-size:10px; opacity:.55; flex-shrink:0; }
 details > summary.head .ts { margin-left:0; }
 details[open] > summary.head .ts { margin-left:auto; }
-.open-btn { border:none; background:transparent; color:var(--icon-dim); padding:1px 3px; cursor:pointer; line-height:0; display:inline-flex; align-items:center; margin-left:auto; flex-shrink:0; }
+.article-btn { border:none; background:transparent; color:var(--icon-dim); padding:1px 3px; cursor:pointer; line-height:0; display:inline-flex; align-items:center; flex-shrink:0; border-radius:4px; }
+.open-btn { margin-left:auto; }
 details > summary.head .open-btn { margin-left:6px; }
-.open-btn:hover { color:var(--icon-hover); }
-main.streaming .open-btn { pointer-events:none; color:var(--icon-dim); opacity:.35; cursor:not-allowed; }
+.article-btn:hover { color:var(--icon-hover); background:var(--btn-bg); }
+main.streaming .article-btn { pointer-events:none; color:var(--icon-dim); opacity:.35; cursor:not-allowed; }
 .content { padding:0; }
 .frame-body { margin:0; padding:8px 12px; color:var(--text); background:var(--card); font:14px/1.42 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; overflow-wrap:anywhere; }
 .frame-body h1,.frame-body h2,.frame-body h3,.frame-body h4,.frame-body h5,.frame-body h6 { margin:.7em 0 .35em; line-height:1.25; font-weight:700; }
@@ -148,8 +152,8 @@ main.streaming .open-btn { pointer-events:none; color:var(--icon-dim); opacity:.
 .prompt-btn.primary { background:var(--link); border-color:var(--link); color:#fff; }
 .prompt-btn.danger { color:var(--err-label); }
 .prompt-btn:disabled, .prompt-input:disabled { opacity:.55; cursor:not-allowed; }
-.prompt-input-row { display:flex; gap:6px; align-items:center; }
-.prompt-input { min-width:220px; flex:1; border:1px solid var(--border); border-radius:6px; background:var(--card); color:var(--text); padding:7px 9px; font:13px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+.prompt-input-row { display:flex; gap:6px; align-items:flex-end; }
+.prompt-input { min-width:220px; min-height:68px; max-height:220px; resize:vertical; flex:1; border:1px solid var(--border); border-radius:6px; background:var(--card); color:var(--text); padding:7px 9px; font:13px/1.35 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
 .prompt-answer { color:var(--muted); font-size:12px; }
 .frame-body > :first-child { margin-top:0; }
 .frame-body > :last-child { margin-bottom:0; }
@@ -168,6 +172,9 @@ main.streaming .open-btn { pointer-events:none; color:var(--icon-dim); opacity:.
 .prompt .head, .prompt details > summary.head { background:var(--prompt-head); }
 .prompt .avatar { background:var(--prompt-avatar); color:#FFF; }
 .prompt .kind-label { color:var(--prompt-label); }
+.prompt.answered .head, .prompt.answered details > summary.head { background:var(--prompt-answered-head); }
+.prompt.answered .avatar { background:var(--prompt-answered-avatar); color:#FFF; }
+.prompt.answered .kind-label { color:var(--prompt-answered-label); }
 .error .head, .error details > summary.head { background:var(--err-head); }
 .error .avatar { background:var(--err-avatar); color:#FFF; }
 .error .kind-label { color:var(--err-label); }
@@ -192,6 +199,13 @@ document.addEventListener('click', e => {
   e.preventDefault();
   e.stopPropagation();
   chrome.webview.postMessage({ type: 'copyUserMessage', id: button.dataset.copyUserId });
+});
+document.addEventListener('click', e => {
+  const button = e.target.closest('[data-delete-id]');
+  if (!button) return;
+  e.preventDefault();
+  e.stopPropagation();
+  chrome.webview.postMessage({ type: 'deleteMessage', id: button.dataset.deleteId });
 });
 document.addEventListener('click', e => {
   const button = e.target.closest('[data-open-id]');
@@ -223,6 +237,51 @@ document.addEventListener('click', e => {
   const value = mode === 'freeform' ? (input?.value || '') : (button.dataset.promptValue || '');
   chrome.webview.postMessage({ type: 'promptResponse', id: article.dataset.mid, value, mode });
 });
+document.addEventListener('keydown', e => {
+  const input = e.target.closest('[data-prompt-input]');
+  if (!input || input.disabled) return;
+  if (e.key !== 'Enter' || !e.ctrlKey) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const article = input.closest('article[data-mid]');
+  if (!article) return;
+  chrome.webview.postMessage({ type: 'promptResponse', id: article.dataset.mid, value: input.value || '', mode: 'freeform' });
+});
+function autoSizeLiveIframe(frame, force) {
+  if (!frame) return;
+  if (!force && frame.dataset.savedHeight === '1') return;
+  try {
+    const height = Math.max(220, frame.contentWindow.document.documentElement.scrollHeight + 10);
+    frame.style.height = height + 'px';
+  } catch {}
+}
+function reportLiveIframeHeight(frame) {
+  const article = frame.closest('article[data-mid]');
+  const frameKey = frame.dataset.frameKey || '';
+  const height = Math.round(frame.getBoundingClientRect().height);
+  if (!article || !frameKey || height < 40) return;
+  const last = Number(frame.dataset.lastReportedHeight || '0');
+  if (Math.abs(height - last) < 2) return;
+  frame.dataset.lastReportedHeight = String(height);
+  chrome.webview.postMessage({ type: 'iframeHeightChanged', id: article.dataset.mid, frameKey, height: String(height) });
+}
+function initLiveFrames(root) {
+  (root || document).querySelectorAll('iframe.live-iframe').forEach(frame => {
+    if (frame.dataset.resizeWatcher === '1') return;
+    frame.dataset.resizeWatcher = '1';
+    const ready = () => {
+      frame.closest('.live-frame')?.classList.add('ready');
+      autoSizeLiveIframe(frame, false);
+      reportLiveIframeHeight(frame);
+    };
+    frame.addEventListener('load', ready);
+    if (frame.contentDocument?.readyState === 'complete') ready();
+    try {
+      new ResizeObserver(() => reportLiveIframeHeight(frame)).observe(frame);
+    } catch {}
+  });
+}
+requestAnimationFrame(() => initLiveFrames(document));
 document.addEventListener('toggle', e => {
   const details = e.target;
   if (!(details instanceof HTMLDetailsElement) || !details.open) return;
@@ -301,6 +360,10 @@ document.addEventListener('toggle', e => {
     private string RenderMessage(ChatMessage message, bool darkTheme)
     {
         var css = message.Kind.ToString().ToLowerInvariant();
+        if (message.Kind is ChatMessageKind.Prompt && message.Prompt?.IsAnswered == true)
+        {
+            css += " answered";
+        }
         var time = WebUtility.HtmlEncode(message.CreatedAt.ToString("g"));
         var durHtml = FormatDuration(message);
         var contentHtml = RenderInlineContent(message);
@@ -342,7 +405,7 @@ document.addEventListener('toggle', e => {
       <span class="kind-label">{{kindHtml}}</span>
       <span class="preview">{{preview}}</span>
       <span class="ts">{{time}}</span>{{(durHtml.Length > 0 ? $"\n      <span class=\"dur\">· {durHtml}</span>" : "")}}
-      <button class="open-btn" data-open-id="{{msgIdHtml}}" title="Open"><svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M10 2h4m0 0v4m0-4L7.5 8.5"/></svg></button>
+      {{RenderDeleteButton(message.Kind, msgIdHtml)}}<button class="article-btn open-btn" data-open-id="{{msgIdHtml}}" title="Open" aria-label="Open"><svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M10 2h4m0 0v4m0-4L7.5 8.5"/></svg></button>
     </summary>
     <div class="content"><div class="frame-body">{{contentHtml}}</div></div>
   </details>
@@ -356,7 +419,7 @@ document.addEventListener('toggle', e => {
     <div class="avatar">{{avatarHtml}}</div>
     <span class="kind-label">{{kindHtml}}</span>
     <span class="ts">{{time}}</span>{{(durHtml.Length > 0 ? $"\n    <span class=\"dur\">· {durHtml}</span>" : "")}}
-    <button class="open-btn" data-open-id="{{msgIdHtml}}" title="Open"><svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M10 2h4m0 0v4m0-4L7.5 8.5"/></svg></button>
+    {{RenderDeleteButton(message.Kind, msgIdHtml)}}<button class="article-btn open-btn" data-open-id="{{msgIdHtml}}" title="Open" aria-label="Open"><svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M10 2h4m0 0v4m0-4L7.5 8.5"/></svg></button>
   </div>
   <div class="content"><div class="frame-body">{{contentHtml}}</div></div>
 </article>
@@ -398,7 +461,7 @@ document.addEventListener('toggle', e => {
       <span class="kind-label">{{kindHtml}}</span>
       <span class="preview">{{preview}}</span>
       <span class="ts">{{time}}</span>{{(durHtml.Length > 0 ? $"\n      <span class=\"dur\">· {durHtml}</span>" : "")}}
-      <button class="open-btn" data-open-id="{{msgIdHtml}}" title="Open"><svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M10 2h4m0 0v4m0-4L7.5 8.5"/></svg></button>
+      {{RenderDeleteButton(userMessage.Kind, msgIdHtml)}}<button class="article-btn open-btn" data-open-id="{{msgIdHtml}}" title="Open" aria-label="Open"><svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M10 2h4m0 0v4m0-4L7.5 8.5"/></svg></button>
     </summary>
     <div class="content"><div class="frame-body">{{contentHtml}}</div></div>
 {{responsesBlock}}
@@ -426,7 +489,7 @@ document.addEventListener('toggle', e => {
         if (message.Kind is ChatMessageKind.Intent or ChatMessageKind.Tool or ChatMessageKind.Error)
             return $"<pre style=\"white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word\">{WebUtility.HtmlEncode(message.Content)}</pre>";
         var html = Markdown.ToHtml(message.Content, _markdown);
-        return InjectLiveHtmlBlocks(html);
+        return InjectLiveHtmlBlocks(html, message.IframeHeights ?? []);
     }
 
     private static string RenderUserContent(ChatMessage message)
@@ -469,7 +532,7 @@ document.addEventListener('toggle', e => {
         var input = prompt.AllowFreeform
             ? $$"""
 <div class="prompt-input-row">
-  <input class="prompt-input" data-prompt-input="1"{{disabled}} placeholder="Optional answer" />
+  <textarea class="prompt-input" data-prompt-input="1"{{disabled}} placeholder="Optional answer"></textarea>
   {{RenderPromptButton("Submit", "", "freeform", prompt.Choices.Count == 0 ? "primary" : "", disabled)}}
 </div>
 """
@@ -491,26 +554,44 @@ document.addEventListener('toggle', e => {
         return $"<button class=\"{classAttr}\" data-prompt-submit=\"1\" data-prompt-mode=\"{WebUtility.HtmlEncode(mode)}\" data-prompt-value=\"{WebUtility.HtmlEncode(value)}\"{disabled}>{WebUtility.HtmlEncode(label)}</button>";
     }
 
+    private static string RenderDeleteButton(ChatMessageKind kind, string msgIdHtml)
+    {
+        if (kind is not (ChatMessageKind.User or ChatMessageKind.Assistant))
+        {
+            return "";
+        }
+
+        return $"""<button class="article-btn delete-btn" data-delete-id="{msgIdHtml}" title="Delete" aria-label="Delete"><svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4h11"/><path d="M6 2.5h4"/><path d="M5 4l.5 9h5L11 4"/><path d="M7 6.5v4M9 6.5v4"/></svg></button>""";
+    }
+
     // Replace fenced HTML code blocks with live iframes.
-    private static string InjectLiveHtmlBlocks(string markdigOutput)
+    private static string InjectLiveHtmlBlocks(string markdigOutput, IReadOnlyDictionary<string, double>? iframeHeights = null)
     {
         // Markdig renders ```html as: <pre><code class="language-html">...escaped html...</code></pre>
+        var frameIndex = 0;
         return System.Text.RegularExpressions.Regex.Replace(
             markdigOutput,
             @"<pre><code class=""language-html"">([\s\S]*?)</code></pre>",
             m =>
             {
+                var frameKey = $"html-{frameIndex++}";
                 var decoded = WebUtility.HtmlDecode(m.Groups[1].Value);
                 var payload = Convert.ToBase64String(Encoding.UTF8.GetBytes(decoded));
                 var srcdoc = decoded
                     .Replace("&", "&amp;")
                     .Replace("\"", "&quot;");
+                var height = iframeHeights is not null && iframeHeights.TryGetValue(frameKey, out var savedHeight)
+                    ? Math.Clamp(savedHeight, 80, 5000)
+                    : 0;
+                var heightAttr = height > 0
+                    ? $" style=\"height:{height:0}px\" data-saved-height=\"1\""
+                    : "";
                 return $"""
 <div style="margin:.5em 0">
   <div class="live-frame">
     <button class="frame-popout-btn" data-popout-frame="1" data-popout-html-b64="{payload}" title="Pop out preview"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M10 2h4m0 0v4m0-4L7.5 8.5"/></svg></button>
     <div class="spinner-wrap"><div class="spinner" aria-hidden="true"></div></div>
-    <iframe class="live-iframe" srcdoc="{srcdoc}" sandbox="allow-scripts allow-same-origin" onload="this.closest(&quot;.live-frame&quot;)?.classList.add(&quot;ready&quot;)"></iframe>
+    <iframe class="live-iframe" data-frame-key="{frameKey}" srcdoc="{srcdoc}" sandbox="allow-scripts allow-same-origin"{heightAttr}></iframe>
   </div>
 </div>
 """;
@@ -533,7 +614,7 @@ document.addEventListener('toggle', e => {
                 ? RenderPromptContent(message)
             : message.Kind is ChatMessageKind.Intent or ChatMessageKind.Tool or ChatMessageKind.Error
                 ? $"<pre style=\"white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word\">{WebUtility.HtmlEncode(message.Content)}</pre>"
-                : InjectLiveHtmlBlocks(Markdown.ToHtml(message.Content, _markdown));
+                : InjectLiveHtmlBlocks(Markdown.ToHtml(message.Content, _markdown), message.IframeHeights ?? []);
 
         var background = darkTheme ? "#161B22" : "#FFFFFF";
         var foreground = darkTheme ? "#E6EDF3" : "#1F2328";

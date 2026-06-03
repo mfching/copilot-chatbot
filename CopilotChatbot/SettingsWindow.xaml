@@ -412,58 +412,87 @@
                             <TextBlock Text="Appearance" />
                         </StackPanel>
                     </TabItem.Header>
-                    <Border Style="{StaticResource CardBorder}" Margin="0,12,0,0" Padding="14">
-                        <StackPanel MaxWidth="620" HorizontalAlignment="Left">
-                            <TextBlock Text="Theme" FontWeight="SemiBold" FontSize="14"
-                                       Foreground="{DynamicResource TextBrush}" Margin="0,0,0,2" />
-                            <TextBlock Text="Controls when the light or dark colour scheme is applied."
-                                       Foreground="{DynamicResource MutedTextBrush}" FontSize="12"
-                                       TextWrapping="Wrap" Margin="0,0,0,10" />
-                            <Separator Background="{DynamicResource BorderBrushModern}" Margin="0,0,0,10" />
-                            <TextBlock Text="Colour Scheme" Style="{StaticResource FieldLabel}" />
-                            <ComboBox x:Name="ThemeComboBox" MaxWidth="260" HorizontalAlignment="Left" />
-                            <TextBlock Text="Follow the sun uses light mode 7 am – 7 pm and dark mode outside those hours."
-                                       Foreground="{DynamicResource MutedTextBrush}" FontSize="11"
-                                       TextWrapping="Wrap" Margin="0,4,0,10" />
-                            <Separator Background="{DynamicResource BorderBrushModern}" Margin="0,0,0,10" />
-                            <TextBlock Text="Response Updates" Style="{StaticResource FieldLabel}" />
-                            <CheckBox x:Name="ResponseBufferingCheckBox"
-                                      Content="Buffer streaming response updates"
-                                      Margin="0,0,0,6"
-                                      Checked="ResponseBufferingCheckBox_Changed"
-                                      Unchecked="ResponseBufferingCheckBox_Changed" />
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <Slider x:Name="ResponseBufferIntervalSlider"
-                                        Minimum="500"
-                                        Maximum="2000"
-                                        TickFrequency="100"
-                                        IsSnapToTickEnabled="True"
-                                        ValueChanged="ResponseBufferIntervalSlider_ValueChanged" />
-                                <TextBlock x:Name="ResponseBufferIntervalText"
-                                           Grid.Column="1"
-                                           Width="72"
-                                           TextAlignment="Right"
-                                           VerticalAlignment="Center"
-                                           Foreground="{DynamicResource MutedTextBrush}"
-                                           FontSize="12" />
-                            </Grid>
-                            <TextBlock Text="Controls how often streaming response text is rendered. Lower values feel live; higher values reduce flicker."
-                                       Foreground="{DynamicResource MutedTextBrush}" FontSize="11"
-                                       TextWrapping="Wrap" Margin="0,4,0,10" />
-                            <Separator Background="{DynamicResource BorderBrushModern}" Margin="0,0,0,10" />
-                            <TextBlock Text="Notifications" Style="{StaticResource FieldLabel}" />
-                            <CheckBox x:Name="TrayNotificationsCheckBox"
-                                      Content="Show tray notifications when Copilot needs a response"
-                                      Margin="0,0,0,4" />
-                            <TextBlock Text="Shows a Windows tray balloon for permission requests, tool approvals, choices, and feedback prompts."
-                                       Foreground="{DynamicResource MutedTextBrush}" FontSize="11"
-                                       TextWrapping="Wrap" />
+                    <ScrollViewer Margin="0,12,0,0" VerticalScrollBarVisibility="Auto">
+                        <StackPanel MaxWidth="660" HorizontalAlignment="Left">
+                            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,10" Padding="14">
+                                <StackPanel>
+                                    <TextBlock Text="Theme" FontWeight="SemiBold" FontSize="14"
+                                               Foreground="{DynamicResource TextBrush}" Margin="0,0,0,2" />
+                                    <TextBlock Text="Controls when the light or dark colour scheme is applied."
+                                               Foreground="{DynamicResource MutedTextBrush}" FontSize="12"
+                                               TextWrapping="Wrap" Margin="0,0,0,10" />
+                                    <TextBlock Text="Colour Scheme" Style="{StaticResource FieldLabel}" />
+                                    <ComboBox x:Name="ThemeComboBox" MaxWidth="260" HorizontalAlignment="Left" />
+                                    <TextBlock Text="Follow the sun uses light mode 7 am – 7 pm and dark mode outside those hours."
+                                               Foreground="{DynamicResource MutedTextBrush}" FontSize="11"
+                                               TextWrapping="Wrap" Margin="0,4,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,10" Padding="14">
+                                <StackPanel>
+                                    <TextBlock Text="Streaming" FontWeight="SemiBold" FontSize="14"
+                                               Foreground="{DynamicResource TextBrush}" Margin="0,0,0,2" />
+                                    <TextBlock Text="Controls how response text is rendered while Copilot is writing."
+                                               Foreground="{DynamicResource MutedTextBrush}" FontSize="12"
+                                               TextWrapping="Wrap" Margin="0,0,0,10" />
+                                    <CheckBox x:Name="ResponseBufferingCheckBox"
+                                              Content="Buffer streaming response updates"
+                                              Margin="0,0,0,6"
+                                              Checked="ResponseBufferingCheckBox_Changed"
+                                              Unchecked="ResponseBufferingCheckBox_Changed" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Slider x:Name="ResponseBufferIntervalSlider"
+                                                Minimum="500"
+                                                Maximum="2000"
+                                                TickFrequency="100"
+                                                IsSnapToTickEnabled="True"
+                                                ValueChanged="ResponseBufferIntervalSlider_ValueChanged" />
+                                        <TextBlock x:Name="ResponseBufferIntervalText"
+                                                   Grid.Column="1"
+                                                   Width="72"
+                                                   TextAlignment="Right"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource MutedTextBrush}"
+                                                   FontSize="12" />
+                                    </Grid>
+                                    <TextBlock Text="Lower values feel live; higher values reduce flicker."
+                                               Foreground="{DynamicResource MutedTextBrush}" FontSize="11"
+                                               TextWrapping="Wrap" Margin="0,4,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,10" Padding="14">
+                                <StackPanel>
+                                    <TextBlock Text="Notifications" FontWeight="SemiBold" FontSize="14"
+                                               Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10" />
+                                    <CheckBox x:Name="TrayNotificationsCheckBox"
+                                              Content="Show tray notifications when Copilot needs a response"
+                                              Margin="0,0,0,4" />
+                                    <TextBlock Text="Shows a Windows tray balloon for permission requests, tool approvals, choices, and feedback prompts."
+                                               Foreground="{DynamicResource MutedTextBrush}" FontSize="11"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource CardBorder}" Padding="14">
+                                <StackPanel>
+                                    <TextBlock Text="Session Defaults" FontWeight="SemiBold" FontSize="14"
+                                               Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10" />
+                                    <CheckBox x:Name="DefaultAutoCollapseCheckBox"
+                                              Content="Collapse last response after user input is sent for new sessions"
+                                              Margin="0,0,0,4" />
+                                    <TextBlock Text="Existing sessions keep their own toolbar setting."
+                                               Foreground="{DynamicResource MutedTextBrush}" FontSize="11"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
-                    </Border>
+                    </ScrollViewer>
                 </TabItem>
 
                 <!-- User Secrets tab -->
@@ -540,6 +569,18 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Width="42">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Button Style="{StaticResource RevealButton}"
+                                                        ToolTip="Remove secret"
+                                                        Click="SecretDeleteButton_Click">
+                                                    <ui:SymbolIcon Symbol="Delete20" FontSize="14"
+                                                                   Foreground="{DynamicResource MutedTextBrush}" />
+                                                </Button>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </Border>
@@ -590,6 +631,18 @@
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="90" />
                                         <DataGridTextColumn Header="Approval" Binding="{Binding Summary}" Width="*" />
+                                        <DataGridTemplateColumn Width="42">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <Button Style="{StaticResource RevealButton}"
+                                                            ToolTip="Remove saved approval"
+                                                            Click="SavedRuleDeleteButton_Click">
+                                                        <ui:SymbolIcon Symbol="Delete20" FontSize="14"
+                                                                       Foreground="{DynamicResource MutedTextBrush}" />
+                                                    </Button>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
                                     </DataGrid.Columns>
                                 </DataGrid>
                             </Border>
@@ -629,6 +682,19 @@
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Folder" Binding="{Binding Path}" Width="*" />
                                     <DataGridTextColumn Header="Access" Binding="{Binding Access}" Width="80" />
+                                    <DataGridTemplateColumn Header="" Width="42">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Button Style="{StaticResource RevealButton}"
+                                                        ToolTip="Remove folder"
+                                                        Click="FolderDeleteButton_Click">
+                                                    <ui:SymbolIcon Symbol="Delete20"
+                                                                   FontSize="14"
+                                                                   Foreground="{DynamicResource MutedTextBrush}" />
+                                                </Button>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </Border>
@@ -661,7 +727,29 @@
                             </Grid>
                         </Border>
                         <Border Style="{StaticResource CardBorder}" Padding="0">
-                            <ListBox x:Name="ToolsList" BorderThickness="0" />
+                            <ListBox x:Name="ToolsList" BorderThickness="0">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="6,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding}"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextBrush}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <Button Grid.Column="1"
+                                                    Style="{StaticResource RevealButton}"
+                                                    ToolTip="Remove tool"
+                                                    Click="ToolDeleteButton_Click">
+                                                <ui:SymbolIcon Symbol="Delete20" FontSize="14"
+                                                               Foreground="{DynamicResource MutedTextBrush}" />
+                                            </Button>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
                         </Border>
                     </DockPanel>
                 </TabItem>
@@ -692,7 +780,29 @@
                             </Grid>
                         </Border>
                         <Border Style="{StaticResource CardBorder}" Padding="0">
-                            <ListBox x:Name="HostsList" BorderThickness="0" />
+                            <ListBox x:Name="HostsList" BorderThickness="0">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="6,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding}"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextBrush}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <Button Grid.Column="1"
+                                                    Style="{StaticResource RevealButton}"
+                                                    ToolTip="Remove host"
+                                                    Click="HostDeleteButton_Click">
+                                                <ui:SymbolIcon Symbol="Delete20" FontSize="14"
+                                                               Foreground="{DynamicResource MutedTextBrush}" />
+                                            </Button>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
                         </Border>
                     </DockPanel>
                 </TabItem>

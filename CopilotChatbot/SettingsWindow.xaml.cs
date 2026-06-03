@@ -46,6 +46,7 @@ public partial class SettingsWindow : Window
         ResponseBufferingCheckBox.IsChecked = Settings.EnableResponseBuffering;
         ResponseBufferIntervalSlider.Value = Math.Clamp(Settings.ResponseBufferIntervalMs <= 0 ? 1000 : Settings.ResponseBufferIntervalMs, 500, 2000);
         TrayNotificationsCheckBox.IsChecked = Settings.EnableTrayNotifications;
+        DefaultAutoCollapseCheckBox.IsChecked = Settings.DefaultAutoCollapsePreviousArticle;
         UpdateResponseBufferControls();
     }
 
@@ -76,6 +77,14 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void SecretDeleteButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: UserSecretSetting secret })
+        {
+            Settings.UserSecrets.Remove(secret);
+        }
+    }
+
     private void AddFolder_Click(object sender, RoutedEventArgs e)
     {
         if (!string.IsNullOrWhiteSpace(FolderPathBox.Text))
@@ -94,6 +103,14 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void FolderDeleteButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: FolderPermission folder })
+        {
+            Settings.Permissions.Folders.Remove(folder);
+        }
+    }
+
     private void AddTool_Click(object sender, RoutedEventArgs e)
     {
         AddUnique(Settings.Permissions.AllowedTools, ToolBox.Text);
@@ -103,6 +120,14 @@ public partial class SettingsWindow : Window
     private void ClearTools_Click(object sender, RoutedEventArgs e)
     {
         Settings.Permissions.AllowedTools.Clear();
+    }
+
+    private void ToolDeleteButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: string tool })
+        {
+            Settings.Permissions.AllowedTools.Remove(tool);
+        }
     }
 
     private void AddHost_Click(object sender, RoutedEventArgs e)
@@ -116,9 +141,25 @@ public partial class SettingsWindow : Window
         Settings.Permissions.AllowedHosts.Clear();
     }
 
+    private void HostDeleteButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: string host })
+        {
+            Settings.Permissions.AllowedHosts.Remove(host);
+        }
+    }
+
     private void RemoveSavedRule_Click(object sender, RoutedEventArgs e)
     {
         if (SavedRulesGrid.SelectedItem is PermissionRule rule)
+        {
+            Settings.Permissions.SavedRules.Remove(rule);
+        }
+    }
+
+    private void SavedRuleDeleteButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: PermissionRule rule })
         {
             Settings.Permissions.SavedRules.Remove(rule);
         }
@@ -328,6 +369,7 @@ public partial class SettingsWindow : Window
         Settings.EnableDebugLogging = EnableDebugLoggingCheckBox.IsChecked == true;
         Settings.EnableResponseBuffering = ResponseBufferingCheckBox.IsChecked == true;
         Settings.EnableTrayNotifications = TrayNotificationsCheckBox.IsChecked == true;
+        Settings.DefaultAutoCollapsePreviousArticle = DefaultAutoCollapseCheckBox.IsChecked == true;
         Settings.ResponseBufferIntervalMs = Math.Clamp((int)ResponseBufferIntervalSlider.Value, 500, 2000);
         Settings.Theme = (AppThemeMode)(ThemeComboBox.SelectedIndex >= 0 ? ThemeComboBox.SelectedIndex : 2);
         DialogResult = true;

@@ -7,14 +7,6 @@
         Height="760"
         Width="980"
         WindowStartupLocation="CenterOwner">
-    <Window.Resources>
-        <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF" />
-        <SolidColorBrush x:Key="ControlBrush" Color="#F8FAFC" />
-        <SolidColorBrush x:Key="BorderBrushModern" Color="#D0D7DE" />
-        <SolidColorBrush x:Key="TextBrush" Color="#1F2328" />
-        <SolidColorBrush x:Key="MutedTextBrush" Color="#5D6673" />
-        <SolidColorBrush x:Key="AccentBrush" Color="#0A65CC" />
-    </Window.Resources>
     <DockPanel>
         <Border DockPanel.Dock="Top"
                 Background="{DynamicResource SurfaceBrush}"
@@ -47,7 +39,7 @@
                                    Foreground="{DynamicResource TextBrush}" />
                         <TextBlock Text="Popped out from chat history"
                                    FontSize="11"
-                                   Foreground="{StaticResource MutedTextBrush}" />
+                                   Foreground="{DynamicResource MutedTextBrush}" />
                     </StackPanel>
                 </StackPanel>
                 <Button Grid.Column="1" Click="Save_Click">

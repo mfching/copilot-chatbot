@@ -4,51 +4,45 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         Title="Response" Height="760" Width="980" WindowStartupLocation="CenterOwner">
-    <Window.Resources>
-        <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF" />
-        <SolidColorBrush x:Key="ControlBrush" Color="#F8FAFC" />
-        <SolidColorBrush x:Key="BorderBrushModern" Color="#D0D7DE" />
-        <SolidColorBrush x:Key="TextBrush" Color="#1F2328" />
-        <SolidColorBrush x:Key="MutedTextBrush" Color="#5D6673" />
-        <SolidColorBrush x:Key="AccentBrush" Color="#0A65CC" />
-        <SolidColorBrush x:Key="AccentSoftBrush" Color="#E7F1FF" />
-    </Window.Resources>
     <DockPanel>
         <!-- Toolbar -->
-        <Border DockPanel.Dock="Top" Background="{StaticResource SurfaceBrush}"
-                BorderBrush="{StaticResource BorderBrushModern}" BorderThickness="0,0,0,1" Padding="16,11">
+        <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource BorderBrushModern}" BorderThickness="0,0,0,1" Padding="16,11">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Border Background="{StaticResource AccentSoftBrush}" CornerRadius="8" Width="32" Height="32" Margin="0,0,10,0">
-                        <ui:SymbolIcon Symbol="DocumentText20" Foreground="#6CB6FF" FontSize="18"
+                    <Border Background="{DynamicResource ControlBrush}"
+                            BorderBrush="{DynamicResource BorderBrushModern}"
+                            BorderThickness="1"
+                            CornerRadius="8" Width="32" Height="32" Margin="0,0,10,0">
+                        <ui:SymbolIcon Symbol="DocumentText20" Foreground="{DynamicResource AccentBrush}" FontSize="18"
                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="Response Viewer" FontWeight="SemiBold" FontSize="14"
-                                   Foreground="{StaticResource TextBrush}" />
+                                   Foreground="{DynamicResource TextBrush}" />
                         <TextBlock Text="Full content view" FontSize="11"
-                                   Foreground="{StaticResource MutedTextBrush}" />
+                                   Foreground="{DynamicResource MutedTextBrush}" />
                     </StackPanel>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button Margin="0,0,8,0" Click="Copy_Click">
                         <Button.Template>
                             <ControlTemplate TargetType="Button">
-                                <Border x:Name="Chr" Background="{StaticResource ControlBrush}"
-                                        BorderBrush="{StaticResource BorderBrushModern}" BorderThickness="1" CornerRadius="8">
+                                <Border x:Name="Chr" Background="{DynamicResource ControlBrush}"
+                                        BorderBrush="{DynamicResource BorderBrushModern}" BorderThickness="1" CornerRadius="8">
                                     <StackPanel Orientation="Horizontal" Margin="12,7">
-                                        <ui:SymbolIcon Symbol="Copy20" FontSize="15" Foreground="{StaticResource TextBrush}" Margin="0,0,6,0" />
+                                        <ui:SymbolIcon Symbol="Copy20" FontSize="15" Foreground="{DynamicResource TextBrush}" Margin="0,0,6,0" />
                                         <TextBlock Text="Copy" FontWeight="SemiBold" FontSize="13"
-                                                   Foreground="{StaticResource TextBrush}" />
+                                                   Foreground="{DynamicResource TextBrush}" />
                                     </StackPanel>
                                 </Border>
                                 <ControlTemplate.Triggers>
                                     <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter TargetName="Chr" Property="Background" Value="{StaticResource SurfaceBrush}" />
+                                        <Setter TargetName="Chr" Property="Background" Value="{DynamicResource ControlHoverBrush}" />
                                     </Trigger>
                                 </ControlTemplate.Triggers>
                             </ControlTemplate>
@@ -57,8 +51,8 @@
                     <Button Click="Save_Click">
                         <Button.Template>
                             <ControlTemplate TargetType="Button">
-                                <Border x:Name="Chr" Background="{StaticResource AccentBrush}"
-                                        BorderBrush="{StaticResource AccentBrush}" BorderThickness="1" CornerRadius="8">
+                                <Border x:Name="Chr" Background="{DynamicResource AccentBrush}"
+                                        BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1" CornerRadius="8">
                                     <StackPanel Orientation="Horizontal" Margin="12,7">
                                         <ui:SymbolIcon Symbol="Save20" FontSize="15" Foreground="White" Margin="0,0,6,0" />
                                         <TextBlock Text="Save" FontWeight="SemiBold" FontSize="13" Foreground="White" />

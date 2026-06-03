@@ -53,6 +53,9 @@ public partial class MainWindow : Window
     private System.Windows.Threading.DispatcherTimer? _themeTimer;
     private WinForms.NotifyIcon? _notifyIcon;
     private Window? _activeResponseWindow;
+    private SessionInfoWindow? _sessionInfoWindow;
+    private readonly List<ResponseWindow> _responseWindows = [];
+    private bool _isOpeningSessionInfoWindow;
 
     public MainWindow()
     {
@@ -60,6 +63,7 @@ public partial class MainWindow : Window
         SetTabHeaderContentWidth(MinTabHeaderWidth);
         LoadWindowIcon();
         _settings = LoadSettingsForStartup();
+        _settings.CommandLineGitHubToken = App.CommandLineGitHubToken;
         ApplyTrayNotificationSetting();
         _debugLogger.IsEnabled = _settings.EnableDebugLogging;
         _copilot = new CopilotChatService(_settingsStore, PromptForPermissionAsync, PromptForUserInputAsync, _debugLogger);
@@ -197,9 +201,42 @@ public partial class MainWindow : Window
 
     private async void SessionInfoButton_Click(object sender, RoutedEventArgs e)
     {
-        var snapshot = await _copilot.GetCapabilitiesSnapshotAsync(CurrentChat);
-        var window = new SessionInfoWindow(snapshot, this);
-        window.Show();
+        if (_sessionInfoWindow is not null)
+        {
+            BringWindowToFront(_sessionInfoWindow);
+            return;
+        }
+
+        if (_isOpeningSessionInfoWindow)
+        {
+            return;
+        }
+
+        _isOpeningSessionInfoWindow = true;
+        try
+        {
+            var snapshot = await _copilot.GetCapabilitiesSnapshotAsync(CurrentChat);
+            if (_sessionInfoWindow is not null)
+            {
+                BringWindowToFront(_sessionInfoWindow);
+                return;
+            }
+
+            var window = new SessionInfoWindow(snapshot, this);
+            _sessionInfoWindow = window;
+            window.Closed += (_, _) =>
+            {
+                if (ReferenceEquals(_sessionInfoWindow, window))
+                {
+                    _sessionInfoWindow = null;
+                }
+            };
+            window.Show();
+        }
+        finally
+        {
+            _isOpeningSessionInfoWindow = false;
+        }
     }
 
     private void SchedulerButton_Click(object sender, RoutedEventArgs e)
@@ -221,6 +258,7 @@ public partial class MainWindow : Window
         if (window.ShowDialog() == true)
         {
             _settings = window.Settings;
+            _settings.CommandLineGitHubToken = App.CommandLineGitHubToken;
             _settingsStore.Save(_settings);
             _debugLogger.IsEnabled = _settings.EnableDebugLogging;
             UpdateMemoryCheckBox();
@@ -755,6 +793,7 @@ public partial class MainWindow : Window
             Child = toggleIcon,
             ToolTip = project.IsCollapsed ? "Expand project" : "Collapse project",
             VerticalAlignment = VerticalAlignment.Center,
+            Cursor = Cursors.Hand
         };
         toggleButton.MouseLeftButtonDown += (_, e) =>
         {
@@ -862,7 +901,8 @@ public partial class MainWindow : Window
             CornerRadius = new CornerRadius(11),
             Child = icon,
             ToolTip = "New chat in project",
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center,
+            Cursor = Cursors.Hand
         };
         button.MouseLeftButtonDown += (_, e) =>
         {
@@ -1190,7 +1230,9 @@ public partial class MainWindow : Window
                 : persisted.SystemPrompt,
             SelectedModelId = string.IsNullOrWhiteSpace(persisted?.SelectedModelId) ? _settings.SelectedModelId : persisted!.SelectedModelId,
             SelectedReasoningEffort = string.IsNullOrWhiteSpace(persisted?.SelectedReasoningEffort) ? _settings.SelectedReasoningEffort : persisted!.SelectedReasoningEffort,
-            AutoCollapsePreviousArticle = persisted?.AutoCollapsePreviousArticle == true
+            AutoCollapsePreviousArticle = persisted is null
+                ? _settings.DefaultAutoCollapsePreviousArticle
+                : persisted.AutoCollapsePreviousArticle
         };
         if (persisted is not null)
         {
@@ -1215,7 +1257,8 @@ public partial class MainWindow : Window
                     Content = message.Content,
                     CreatedAt = message.CreatedAt == default ? DateTimeOffset.Now : message.CreatedAt,
                     CompletedAt = message.CompletedAt,
-                    Prompt = message.Prompt
+                    Prompt = message.Prompt,
+                    IframeHeights = message.IframeHeights ?? []
                 });
             }
         }
@@ -1537,7 +1580,8 @@ public partial class MainWindow : Window
                 Content = message.Content,
                 CreatedAt = message.CreatedAt,
                 CompletedAt = message.CompletedAt,
-                Prompt = message.Prompt
+                Prompt = message.Prompt,
+                IframeHeights = message.IframeHeights ?? []
             }).ToList()
         };
 
@@ -2257,6 +2301,29 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (message.Type.Equals("deleteMessage", StringComparison.OrdinalIgnoreCase))
+        {
+            if (sourceChat is not null && !string.IsNullOrWhiteSpace(message.Id))
+            {
+                DeleteChatMessage(sourceChat, message.Id);
+            }
+
+            return;
+        }
+
+        if (message.Type.Equals("iframeHeightChanged", StringComparison.OrdinalIgnoreCase))
+        {
+            if (sourceChat is not null &&
+                !string.IsNullOrWhiteSpace(message.Id) &&
+                !string.IsNullOrWhiteSpace(message.FrameKey) &&
+                double.TryParse(message.Value, out var iframeHeight))
+            {
+                UpdateIframeHeight(sourceChat, message.Id, message.FrameKey, iframeHeight);
+            }
+
+            return;
+        }
+
         if (message.Type.Equals("promptResponse", StringComparison.OrdinalIgnoreCase))
         {
             if (sourceChat is not null && !string.IsNullOrWhiteSpace(message.Id))
@@ -2276,8 +2343,16 @@ public partial class MainWindow : Window
         var chatMessage = (sourceChat ?? CurrentChat)?.Messages.FirstOrDefault(m => m.Id == id);
         if (chatMessage is not null)
         {
-            new ResponseWindow(_htmlRenderer, chatMessage, _isDarkTheme) { Owner = this }.Show();
+            ShowResponseWindow(chatMessage);
         }
+    }
+
+    private void ShowResponseWindow(ChatMessage message)
+    {
+        var window = new ResponseWindow(_htmlRenderer, message, _isDarkTheme, () => _isDarkTheme) { Owner = this };
+        _responseWindows.Add(window);
+        window.Closed += (_, _) => _responseWindows.Remove(window);
+        window.Show();
     }
 
     private void CopyUserMessageToClipboard(ChatSessionView chat, string messageId)
@@ -2300,6 +2375,82 @@ public partial class MainWindow : Window
         }
     }
 
+    private void DeleteChatMessage(ChatSessionView chat, string messageId)
+    {
+        if (chat.IsPending)
+        {
+            GetTabContent(chat)?.SetStatus("Cannot delete while Copilot is responding");
+            return;
+        }
+
+        var index = chat.Messages.Select((message, i) => new { message, i })
+            .FirstOrDefault(item => item.message.Id == messageId)?.i ?? -1;
+        if (index < 0)
+        {
+            return;
+        }
+
+        var message = chat.Messages[index];
+        if (message.Kind is not (ChatMessageKind.User or ChatMessageKind.Assistant))
+        {
+            return;
+        }
+
+        var deleteCount = message.Kind == ChatMessageKind.User
+            ? CountTurnMessages(chat.Messages, index)
+            : 1;
+        var confirmText = message.Kind == ChatMessageKind.User && deleteCount > 1
+            ? $"Delete this user message and {deleteCount - 1} response article{(deleteCount == 2 ? "" : "s")} under it?"
+            : "Delete this message article?";
+
+        if (MessageBox.Show(this, confirmText, "Delete message", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        for (var i = 0; i < deleteCount; i++)
+        {
+            chat.Messages.RemoveAt(index);
+        }
+
+        RenderChat(chat);
+        SaveOpenChats();
+    }
+
+    private static int CountTurnMessages(IList<ChatMessage> messages, int userIndex)
+    {
+        var count = 1;
+        for (var i = userIndex + 1; i < messages.Count; i++)
+        {
+            if (messages[i].Kind == ChatMessageKind.User)
+            {
+                break;
+            }
+
+            count++;
+        }
+
+        return count;
+    }
+
+    private void UpdateIframeHeight(ChatSessionView chat, string messageId, string frameKey, double height)
+    {
+        if (chat.Messages.FirstOrDefault(message => message.Id == messageId) is not { } message)
+        {
+            return;
+        }
+
+        height = Math.Clamp(height, 80, 5000);
+        message.IframeHeights ??= [];
+        if (message.IframeHeights.TryGetValue(frameKey, out var previous) && Math.Abs(previous - height) < 2)
+        {
+            return;
+        }
+
+        message.IframeHeights[frameKey] = height;
+        SaveOpenChats();
+    }
+
     private static BrowserBridgeMessage? TryReadBrowserMessage(CoreWebView2WebMessageReceivedEventArgs e)
     {
         try
@@ -2314,18 +2465,19 @@ public partial class MainWindow : Window
                 var htmlBase64 = root.TryGetProperty("htmlBase64", out var htmlBase64Prop) ? htmlBase64Prop.GetString() : null;
                 var value = root.TryGetProperty("value", out var valueProp) ? valueProp.GetString() : null;
                 var mode = root.TryGetProperty("mode", out var modeProp) ? modeProp.GetString() : null;
-                return new BrowserBridgeMessage(typeValue, id, html, htmlBase64, value, mode);
+                var frameKey = root.TryGetProperty("frameKey", out var frameKeyProp) ? frameKeyProp.GetString() : null;
+                return new BrowserBridgeMessage(typeValue, id, html, htmlBase64, value, mode, frameKey);
             }
 
             return root.ValueKind == JsonValueKind.String
-                ? new BrowserBridgeMessage("open", root.GetString(), null, null, null, null)
+                ? new BrowserBridgeMessage("open", root.GetString(), null, null, null, null, null)
                 : null;
         }
         catch
         {
             try
             {
-                return new BrowserBridgeMessage("open", e.TryGetWebMessageAsString(), null, null, null, null);
+                return new BrowserBridgeMessage("open", e.TryGetWebMessageAsString(), null, null, null, null, null);
             }
             catch
             {
@@ -2351,7 +2503,7 @@ public partial class MainWindow : Window
         return message.Html;
     }
 
-    private sealed record BrowserBridgeMessage(string Type, string? Id, string? Html, string? HtmlBase64, string? Value, string? Mode);
+    private sealed record BrowserBridgeMessage(string Type, string? Id, string? Html, string? HtmlBase64, string? Value, string? Mode, string? FrameKey);
 
     private Task<PermissionPromptDecision> PromptForPermissionAsync(ChatSessionView chat, PermissionPrompt prompt)
     {
@@ -2522,6 +2674,7 @@ public partial class MainWindow : Window
         {
             if (_notifyIcon is null)
             {
+                _debugLogger.Log("TRAY-NOTIFICATION-SKIPPED", "NotifyIcon is not available or tray notifications are disabled.");
                 return;
             }
 
@@ -2553,21 +2706,26 @@ public partial class MainWindow : Window
         Dispatcher.BeginInvoke(() =>
         {
             var window = _activeResponseWindow ?? this;
-            if (window.WindowState == WindowState.Minimized)
-            {
-                window.WindowState = WindowState.Normal;
-            }
-
-            window.Activate();
-            window.Topmost = true;
-            window.Topmost = false;
-
-            var helper = new System.Windows.Interop.WindowInteropHelper(window);
-            if (helper.Handle != IntPtr.Zero)
-            {
-                SetForegroundWindow(helper.Handle);
-            }
+            BringWindowToFront(window);
         });
+    }
+
+    private static void BringWindowToFront(Window window)
+    {
+        if (window.WindowState == WindowState.Minimized)
+        {
+            window.WindowState = WindowState.Normal;
+        }
+
+        window.Activate();
+        window.Topmost = true;
+        window.Topmost = false;
+
+        var helper = new System.Windows.Interop.WindowInteropHelper(window);
+        if (helper.Handle != IntPtr.Zero)
+        {
+            SetForegroundWindow(helper.Handle);
+        }
     }
 
     private static string BuildPermissionNotificationText(PermissionPrompt prompt)
@@ -2819,6 +2977,7 @@ public partial class MainWindow : Window
                                 var nextBody = nextDetails.querySelector('.frame-body');
                                 if (curBody && nextBody) {
                                     curBody.innerHTML = nextBody.innerHTML;
+                                    if (typeof initLiveFrames === 'function') initLiveFrames(curBody);
                                 }
 
                                 if (oldOpen !== null) {
@@ -2863,8 +3022,9 @@ public partial class MainWindow : Window
                         }
                     });
 
-                    document.querySelectorAll('iframe').forEach(f => {
-                        try { f.style.height = Math.max(40, f.contentWindow.document.documentElement.scrollHeight + 10) + 'px'; } catch {}
+                    if (typeof initLiveFrames === 'function') initLiveFrames(m);
+                    document.querySelectorAll('iframe.live-iframe').forEach(f => {
+                        if (typeof autoSizeLiveIframe === 'function') autoSizeLiveIframe(f, false);
                     });
                     el.scrollTop = atBottom ? el.scrollHeight : savedY;
                 })()
@@ -2909,7 +3069,8 @@ public partial class MainWindow : Window
             message.Kind.ToString(),
             message.Content,
             message.CreatedAt.ToUnixTimeMilliseconds().ToString(),
-            completed);
+            completed,
+            string.Join(",", (message.IframeHeights ?? []).OrderBy(pair => pair.Key).Select(pair => $"{pair.Key}:{pair.Value:0}")));
     }
 
     private void ClearAppliedForceClosedArticleIds(ChatSessionView chat, IReadOnlyList<BrowserMessagePatch> payload)
@@ -3121,6 +3282,11 @@ public partial class MainWindow : Window
                 if (c.IsPageInitialized)
                     _ = c.Browser.ExecuteScriptAsync(themeScript);
             }
+        }
+
+        foreach (var responseWindow in _responseWindows.ToArray())
+        {
+            responseWindow.ApplyWindowTheme(dark);
         }
     }
 

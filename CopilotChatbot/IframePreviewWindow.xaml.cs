@@ -29,20 +29,6 @@ public partial class IframePreviewWindow : Window
     private void ApplyWindowTheme(bool dark)
     {
         Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(dark ? "#111827" : "#F3F5F8"));
-        SetBrush("SurfaceBrush", dark ? "#111827" : "#FFFFFF");
-        SetBrush("ControlBrush", dark ? "#1D293D" : "#F8FAFC");
-        SetBrush("BorderBrushModern", dark ? "#344054" : "#D0D7DE");
-        SetBrush("TextBrush", dark ? "#F8FAFC" : "#1F2328");
-        SetBrush("MutedTextBrush", dark ? "#B8C2CC" : "#5D6673");
-        SetBrush("AccentBrush", dark ? "#6CB6FF" : "#0A65CC");
-    }
-
-    private void SetBrush(string key, string hex)
-    {
-        if (Resources.Contains(key))
-        {
-            Resources[key] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
-        }
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)

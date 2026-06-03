@@ -25,6 +25,7 @@ It provides a tabbed chat UI, session restore, model selection, reasoning effort
 - Turn-based response display, where all responses for a prompt are grouped under the user message
 - Expanding any collapsed user turn opens the latest assistant response in that turn when the nested articles are all collapsed
 - User messages include an inline copy button for copying the original prompt text to the Windows clipboard
+- User and assistant message articles can be deleted from chat history, with user-message deletion removing the whole grouped turn
 - Project-level tab groups can be collapsed and restored with their collapsed/expanded state
 - Project tab groups and child session tabs can be moved to top, moved up/down, or moved to bottom within their current level
 - Activity bar for transient Copilot status such as reasoning, tool execution, background agent progress, and shortcut activity
@@ -49,7 +50,7 @@ It provides a tabbed chat UI, session restore, model selection, reasoning effort
 - Light, dark, system, and follow-the-sun theme options, including themed capability dialogs and chat scrollbars
 - Optional Windows tray notifications when Copilot needs user input
 - Optional debug logging
-- Markdown rendering, collapsible message cards, response pop-out windows, embedded HTML previews, and iframe preview pop-out windows
+- Markdown rendering, collapsible message cards, response pop-out windows, embedded HTML previews, iframe preview pop-out windows, and restored iframe preview heights
 - Custom application icon and Windows `.ico` packaging
 
 ## Tech Stack
@@ -85,6 +86,12 @@ dotnet build .\CopilotChatbot.sln -c Debug
 dotnet run --project .\CopilotChatbot\CopilotChatbot.csproj
 ```
 
+To force a GitHub token for the current app run without saving it to settings:
+
+```powershell
+dotnet run --project .\CopilotChatbot\CopilotChatbot.csproj -- --ghtoken ghp_XXXX
+```
+
 ## First-Time Setup
 
 Open **Settings** in the app and configure:
@@ -97,6 +104,7 @@ Open **Settings** in the app and configure:
 - Optional default system prompt
 - Optional extra agent and skill folders
 - Preferred appearance/theme
+- Default auto-collapse behavior for new chat sessions
 - Optional tray notifications for permission, choice, and feedback prompts
 - Optional debug logging
 
@@ -221,6 +229,7 @@ Default agent and skill locations shown by the app:
   - Run `/cwd` to confirm project-level MCP config is being resolved from the expected folder.
 - Authentication or connection failures:
   - Re-check token value in Settings.
+  - To override the saved token for one run, start with `--ghtoken ghp_XXXX`.
   - If settings are encrypted, restart and confirm the startup settings password unlocks successfully.
   - Confirm network/proxy restrictions do not block Copilot CLI.
 - Memory requests are rejected:

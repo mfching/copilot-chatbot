@@ -185,7 +185,7 @@ public sealed class CopilotChatService : IAsyncDisposable
         try
         {
             var client = await EnsureClientAsync(settings, cancellationToken);
-            var token = await ResolveGitHubTokenAsync(settings.GitHubToken);
+            var token = await ResolveGitHubTokenAsync(settings.EffectiveGitHubToken);
             probe = await client.CreateSessionAsync(new SessionConfig
             {
                 Model = settings.SelectedModelId,
@@ -330,7 +330,7 @@ public sealed class CopilotChatService : IAsyncDisposable
         try
         {
             var client = await EnsureClientAsync(settings, cancellationToken);
-            var token = await ResolveGitHubTokenAsync(settings.GitHubToken);
+            var token = await ResolveGitHubTokenAsync(settings.EffectiveGitHubToken);
             probe = await client.CreateSessionAsync(new SessionConfig
             {
                 Model = !string.IsNullOrWhiteSpace(spec.ModelId) ? spec.ModelId : settings.SelectedModelId,
@@ -393,7 +393,7 @@ public sealed class CopilotChatService : IAsyncDisposable
 
         var client = await EnsureClientAsync(settings);
         await client.GetSessionMetadataAsync(chat.CopilotSessionId);
-        var token = await ResolveGitHubTokenAsync(settings.GitHubToken);
+        var token = await ResolveGitHubTokenAsync(settings.EffectiveGitHubToken);
         var customAgents = LoadAgentsFromDirectories(settings);
         if (customAgents?.Count > 0)
         {
@@ -439,7 +439,7 @@ public sealed class CopilotChatService : IAsyncDisposable
             return _client;
         }
 
-        var token = await ResolveGitHubTokenAsync(settings.GitHubToken);
+        var token = await ResolveGitHubTokenAsync(settings.EffectiveGitHubToken);
         var env = CreateProcessEnvironment();
         foreach (var secret in settings.UserSecrets.Where(s => !string.IsNullOrWhiteSpace(s.EnvironmentVariable)))
         {
@@ -463,7 +463,7 @@ public sealed class CopilotChatService : IAsyncDisposable
         var client = new CopilotClient(new CopilotClientOptions
         {
             CliPath = bundledCliPath,
-            //GitHubToken = token,
+            GitHubToken = token,
             Environment = env,
             Cwd = cwd
         });
@@ -755,7 +755,7 @@ public sealed class CopilotChatService : IAsyncDisposable
         }
 
         var client = await EnsureClientAsync(settings);
-        var token = await ResolveGitHubTokenAsync(settings.GitHubToken);
+        var token = await ResolveGitHubTokenAsync(settings.EffectiveGitHubToken);
         var customAgents = LoadAgentsFromDirectories(settings);
         if (customAgents?.Count > 0)
         {

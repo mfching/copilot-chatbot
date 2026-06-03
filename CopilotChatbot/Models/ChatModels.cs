@@ -24,6 +24,7 @@ public sealed class ChatMessage
     /// <summary>Set when the response turn is fully received. Null while streaming or for user messages.</summary>
     public DateTimeOffset? CompletedAt { get; set; }
     public ChatPromptState? Prompt { get; set; }
+    public Dictionary<string, double> IframeHeights { get; set; } = [];
 }
 
 public sealed class ChatPromptState
@@ -107,4 +108,5 @@ public sealed class PersistedChatMessage
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
     public ChatPromptState? Prompt { get; set; }
+    public Dictionary<string, double> IframeHeights { get; set; } = [];
 }

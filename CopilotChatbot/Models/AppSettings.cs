@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Text.Json.Serialization;
 
 namespace CopilotChatbot.Models;
 
@@ -7,6 +8,10 @@ public enum AppThemeMode { Light, Dark, System, FollowTheSun }
 public sealed class AppSettings
 {
     public string? GitHubToken { get; set; }
+    [JsonIgnore]
+    public string? CommandLineGitHubToken { get; set; }
+    [JsonIgnore]
+    public string? EffectiveGitHubToken => string.IsNullOrWhiteSpace(CommandLineGitHubToken) ? GitHubToken : CommandLineGitHubToken;
     public AppThemeMode Theme { get; set; } = AppThemeMode.System;
     public ObservableCollection<UserSecretSetting> UserSecrets { get; set; } = [];
     public string? SelectedModelId { get; set; }
@@ -16,6 +21,7 @@ public sealed class AppSettings
     public bool EnableDebugLogging { get; set; }
     public bool EnableResponseBuffering { get; set; } = true;
     public bool EnableTrayNotifications { get; set; } = true;
+    public bool DefaultAutoCollapsePreviousArticle { get; set; }
     public int ResponseBufferIntervalMs { get; set; } = 1000;
     public string? WorkingDirectory { get; set; }
     public ObservableCollection<string> AgentDirectories { get; set; } = [];
