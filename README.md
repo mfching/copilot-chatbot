@@ -86,10 +86,10 @@ dotnet build .\CopilotChatbot.sln -c Debug
 dotnet run --project .\CopilotChatbot\CopilotChatbot.csproj
 ```
 
-To force a GitHub token for the current app run without saving it to settings:
+To pass a Copilot session token for the current app run without saving it to settings:
 
 ```powershell
-dotnet run --project .\CopilotChatbot\CopilotChatbot.csproj -- --ghtoken ghp_XXXX
+dotnet run --project .\CopilotChatbot\CopilotChatbot.csproj -- --gh-token ghp_XXXX
 ```
 
 ## First-Time Setup
@@ -189,6 +189,7 @@ Chat sessions are still saved as a flat session list for backward compatibility.
 - A default read-only GitHub MCP server is added when missing and is also available as a bundled fallback.
 - Existing MCP server entries are not overwritten; server names are first-wins.
 - The default GitHub MCP server uses `https://api.githubcopilot.com/mcp/readonly` and keeps `Authorization: Bearer $env:GITHUB_TOKEN` in config so the Copilot SDK/runtime can resolve the environment variable.
+- The saved GitHub token is injected into the child process as `GITHUB_TOKEN`; `--gh-token` is used only for the Copilot session token.
 - The configured working directory is where Copilot CLI runs.
 - Project-level Copilot/MCP config is typically resolved relative to the working directory.
 - Agents and skills are loaded from the default Copilot locations plus any extra folders configured in Settings.
@@ -229,7 +230,7 @@ Default agent and skill locations shown by the app:
   - Run `/cwd` to confirm project-level MCP config is being resolved from the expected folder.
 - Authentication or connection failures:
   - Re-check token value in Settings.
-  - To override the saved token for one run, start with `--ghtoken ghp_XXXX`.
+  - To use a Copilot session token for one run, start with `--gh-token ghp_XXXX`.
   - If settings are encrypted, restart and confirm the startup settings password unlocks successfully.
   - Confirm network/proxy restrictions do not block Copilot CLI.
 - Memory requests are rejected:

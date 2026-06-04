@@ -446,6 +446,8 @@ public partial class MainWindow : Window
     {
         if (!chat.IsPending) return;
 
+        var cancelledPrompt = CancelPendingPromptsForChat(chat);
+
         try
         {
             await _copilot.AbortAsync(chat);
@@ -460,6 +462,10 @@ public partial class MainWindow : Window
         finally
         {
             chat.IsPending = false;
+            if (cancelledPrompt)
+            {
+                SetChatInputRequired(chat, false);
+            }
             SetTabBusyIndicator(chat, false);
             GetTabContent(chat)?.SetState(false, chat.IsSessionMissing);
             SaveOpenChats();
@@ -2598,6 +2604,46 @@ public partial class MainWindow : Window
     private bool HasPendingPrompt(ChatSessionView chat) =>
         _pendingPromptChats.Any(pair => ReferenceEquals(pair.Value, chat));
 
+    private bool CancelPendingPromptsForChat(ChatSessionView chat)
+    {
+        var promptIds = _pendingPromptChats
+            .Where(pair => ReferenceEquals(pair.Value, chat))
+            .Select(pair => pair.Key)
+            .ToArray();
+
+        if (promptIds.Length == 0)
+        {
+            return false;
+        }
+
+        foreach (var promptId in promptIds)
+        {
+            _pendingPromptChats.Remove(promptId);
+
+            if (_pendingPermissionPrompts.Remove(promptId, out var permissionTcs))
+            {
+                permissionTcs.TrySetResult(PermissionPromptDecision.Deny);
+            }
+
+            if (_pendingUserInputPrompts.Remove(promptId, out var inputTcs))
+            {
+                inputTcs.TrySetResult(new UserInputPromptResult("", WasFreeform: false));
+            }
+
+            var message = chat.Messages.FirstOrDefault(message =>
+                message.Id == promptId &&
+                message.Prompt is { IsAnswered: false });
+            if (message?.Prompt is { } promptState)
+            {
+                promptState.IsAnswered = true;
+                promptState.Answer = "Cancelled";
+                message.CompletedAt = DateTimeOffset.Now;
+            }
+        }
+
+        return true;
+    }
+
     private static PermissionPromptDecision ParsePermissionDecision(string value) =>
         Enum.TryParse<PermissionPromptDecision>(value, ignoreCase: true, out var decision)
             ? decision
@@ -2656,7 +2702,8 @@ public partial class MainWindow : Window
             // Fall through to the executable icon.
         }
 
-        return System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath ?? "");
+        return System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath ?? "")
+               ?? System.Drawing.SystemIcons.Application;
     }
 
     private void ShowUserResponseNotification(string title, string message, Window? responseWindow = null)
@@ -2674,10 +2721,19 @@ public partial class MainWindow : Window
         {
             if (_notifyIcon is null)
             {
+                if (_settings.EnableTrayNotifications)
+                {
+                    InitializeTrayNotifications();
+                }
+            }
+
+            if (_notifyIcon is null)
+            {
                 _debugLogger.Log("TRAY-NOTIFICATION-SKIPPED", "NotifyIcon is not available or tray notifications are disabled.");
                 return;
             }
 
+            _notifyIcon.Visible = true;
             _notifyIcon.BalloonTipTitle = title;
             _notifyIcon.BalloonTipText = TruncateForBalloon(message);
             _notifyIcon.BalloonTipIcon = WinForms.ToolTipIcon.Info;

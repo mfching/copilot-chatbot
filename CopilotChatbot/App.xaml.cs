@@ -19,12 +19,12 @@ public partial class App : Application
         for (var i = 0; i < args.Length; i++)
         {
             var arg = args[i];
-            if (arg.StartsWith("--ghtoken=", StringComparison.OrdinalIgnoreCase))
+            if (arg.StartsWith("--gh-token=", StringComparison.OrdinalIgnoreCase))
             {
-                return CleanToken(arg["--ghtoken=".Length..]);
+                return CleanToken(arg["--gh-token=".Length..]);
             }
 
-            if (arg.Equals("--ghtoken", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+            if (arg.Equals("--gh-token", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
             {
                 return CleanToken(args[i + 1]);
             }

@@ -1,7 +1,10 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Media;
 using CopilotChatbot.Models;
 using CopilotChatbot.Services;
@@ -14,6 +17,10 @@ public partial class SettingsWindow : Window
 {
     private readonly SettingsStore _store;
     private readonly DebugLogger _debugLogger;
+    private readonly ICollectionView _secretsView;
+    private readonly ICollectionView _toolsView;
+    private readonly ICollectionView _hostsView;
+    private readonly ICollectionView _savedRulesView;
     public AppSettings Settings { get; }
 
     public SettingsWindow(SettingsStore store, AppSettings settings, DebugLogger debugLogger)
@@ -22,12 +29,30 @@ public partial class SettingsWindow : Window
         _store = store;
         _debugLogger = debugLogger;
         Settings = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings)) ?? new AppSettings();
+        SortUserSecrets(Settings.UserSecrets);
+        SortStringCollection(Settings.Permissions.AllowedTools);
+        SortStringCollection(Settings.Permissions.AllowedHosts);
+        SortSavedRules(Settings.Permissions.SavedRules);
         GitHubTokenBox.Password = Settings.GitHubToken ?? "";
         SecretsGrid.ItemsSource = Settings.UserSecrets;
+        _secretsView = CollectionViewSource.GetDefaultView(SecretsGrid.ItemsSource);
+        _secretsView.SortDescriptions.Add(new SortDescription(nameof(UserSecretSetting.Name), ListSortDirection.Ascending));
+        _secretsView.SortDescriptions.Add(new SortDescription(nameof(UserSecretSetting.EnvironmentVariable), ListSortDirection.Ascending));
+        _secretsView.Filter = SecretMatchesFilter;
         FoldersGrid.ItemsSource = Settings.Permissions.Folders;
         ToolsList.ItemsSource = Settings.Permissions.AllowedTools;
+        _toolsView = CollectionViewSource.GetDefaultView(ToolsList.ItemsSource);
+        _toolsView.SortDescriptions.Add(new SortDescription("", ListSortDirection.Ascending));
+        _toolsView.Filter = ToolMatchesFilter;
         HostsList.ItemsSource = Settings.Permissions.AllowedHosts;
+        _hostsView = CollectionViewSource.GetDefaultView(HostsList.ItemsSource);
+        _hostsView.SortDescriptions.Add(new SortDescription("", ListSortDirection.Ascending));
+        _hostsView.Filter = HostMatchesFilter;
         SavedRulesGrid.ItemsSource = Settings.Permissions.SavedRules;
+        _savedRulesView = CollectionViewSource.GetDefaultView(SavedRulesGrid.ItemsSource);
+        _savedRulesView.SortDescriptions.Add(new SortDescription(nameof(PermissionRule.Kind), ListSortDirection.Ascending));
+        _savedRulesView.SortDescriptions.Add(new SortDescription(nameof(PermissionRule.Summary), ListSortDirection.Ascending));
+        _savedRulesView.Filter = SavedRuleMatchesFilter;
         AllowMcpCheckBox.IsChecked = Settings.Permissions.AllowMcpByDefault;
         AllowCustomToolsCheckBox.IsChecked = Settings.Permissions.AllowCustomToolsByDefault;
         SystemPromptBox.Text = Settings.DefaultSystemPrompt ?? "";
@@ -63,6 +88,8 @@ public partial class SettingsWindow : Window
             EnvironmentVariable = SecretEnvBox.Text.Trim(),
             EncryptedValue = _store.ProtectSecret(GetSecretValue())
         });
+        SortUserSecrets(Settings.UserSecrets);
+        _secretsView.Refresh();
         SecretNameBox.Clear();
         SecretEnvBox.Clear();
         SecretValueBox.Clear();
@@ -74,6 +101,7 @@ public partial class SettingsWindow : Window
         if (SecretsGrid.SelectedItem is UserSecretSetting secret)
         {
             Settings.UserSecrets.Remove(secret);
+            _secretsView.Refresh();
         }
     }
 
@@ -82,6 +110,7 @@ public partial class SettingsWindow : Window
         if (sender is Button { DataContext: UserSecretSetting secret })
         {
             Settings.UserSecrets.Remove(secret);
+            _secretsView.Refresh();
         }
     }
 
@@ -114,12 +143,15 @@ public partial class SettingsWindow : Window
     private void AddTool_Click(object sender, RoutedEventArgs e)
     {
         AddUnique(Settings.Permissions.AllowedTools, ToolBox.Text);
+        SortStringCollection(Settings.Permissions.AllowedTools);
+        _toolsView.Refresh();
         ToolBox.Clear();
     }
 
     private void ClearTools_Click(object sender, RoutedEventArgs e)
     {
         Settings.Permissions.AllowedTools.Clear();
+        _toolsView.Refresh();
     }
 
     private void ToolDeleteButton_Click(object sender, RoutedEventArgs e)
@@ -127,18 +159,27 @@ public partial class SettingsWindow : Window
         if (sender is Button { DataContext: string tool })
         {
             Settings.Permissions.AllowedTools.Remove(tool);
+            _toolsView.Refresh();
         }
+    }
+
+    private void ToolFilterBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        _toolsView.Refresh();
     }
 
     private void AddHost_Click(object sender, RoutedEventArgs e)
     {
         AddUnique(Settings.Permissions.AllowedHosts, HostBox.Text);
+        SortStringCollection(Settings.Permissions.AllowedHosts);
+        _hostsView.Refresh();
         HostBox.Clear();
     }
 
     private void ClearHosts_Click(object sender, RoutedEventArgs e)
     {
         Settings.Permissions.AllowedHosts.Clear();
+        _hostsView.Refresh();
     }
 
     private void HostDeleteButton_Click(object sender, RoutedEventArgs e)
@@ -146,7 +187,13 @@ public partial class SettingsWindow : Window
         if (sender is Button { DataContext: string host })
         {
             Settings.Permissions.AllowedHosts.Remove(host);
+            _hostsView.Refresh();
         }
+    }
+
+    private void HostFilterBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        _hostsView.Refresh();
     }
 
     private void RemoveSavedRule_Click(object sender, RoutedEventArgs e)
@@ -154,6 +201,7 @@ public partial class SettingsWindow : Window
         if (SavedRulesGrid.SelectedItem is PermissionRule rule)
         {
             Settings.Permissions.SavedRules.Remove(rule);
+            _savedRulesView.Refresh();
         }
     }
 
@@ -162,12 +210,24 @@ public partial class SettingsWindow : Window
         if (sender is Button { DataContext: PermissionRule rule })
         {
             Settings.Permissions.SavedRules.Remove(rule);
+            _savedRulesView.Refresh();
         }
     }
 
     private void ClearSavedRules_Click(object sender, RoutedEventArgs e)
     {
         Settings.Permissions.SavedRules.Clear();
+        _savedRulesView.Refresh();
+    }
+
+    private void SecretFilterBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        _secretsView.Refresh();
+    }
+
+    private void SavedRuleFilterBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        _savedRulesView.Refresh();
     }
 
     private static void AddUnique(ICollection<string> list, string value)
@@ -176,6 +236,112 @@ public partial class SettingsWindow : Window
         if (!string.IsNullOrWhiteSpace(value) && !list.Contains(value, StringComparer.OrdinalIgnoreCase))
         {
             list.Add(value);
+        }
+    }
+
+    private bool HostMatchesFilter(object item)
+    {
+        if (item is not string host)
+        {
+            return false;
+        }
+
+        var filter = HostFilterBox.Text.Trim();
+        return string.IsNullOrWhiteSpace(filter) ||
+               host.Contains(filter, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool ToolMatchesFilter(object item)
+    {
+        if (item is not string tool)
+        {
+            return false;
+        }
+
+        var filter = ToolFilterBox.Text.Trim();
+        return string.IsNullOrWhiteSpace(filter) ||
+               tool.Contains(filter, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool SecretMatchesFilter(object item)
+    {
+        if (item is not UserSecretSetting secret)
+        {
+            return false;
+        }
+
+        var filter = SecretFilterBox.Text.Trim();
+        return string.IsNullOrWhiteSpace(filter) ||
+               secret.Name.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+               secret.EnvironmentVariable.Contains(filter, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool SavedRuleMatchesFilter(object item)
+    {
+        if (item is not PermissionRule rule)
+        {
+            return false;
+        }
+
+        var filter = SavedRuleFilterBox.Text.Trim();
+        return string.IsNullOrWhiteSpace(filter) ||
+               rule.Kind.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+               rule.Summary.Contains(filter, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void SortStringCollection(ObservableCollection<string> values)
+    {
+        var sorted = values
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        for (var i = 0; i < sorted.Length; i++)
+        {
+            if (!string.Equals(values[i], sorted[i], StringComparison.Ordinal))
+            {
+                values[i] = sorted[i];
+            }
+        }
+    }
+
+    private static void SortUserSecrets(ObservableCollection<UserSecretSetting> values)
+    {
+        SortCollection(values, Comparer<UserSecretSetting>.Create((left, right) =>
+        {
+            var byName = StringComparer.OrdinalIgnoreCase.Compare(left.Name, right.Name);
+            return byName != 0
+                ? byName
+                : StringComparer.OrdinalIgnoreCase.Compare(left.EnvironmentVariable, right.EnvironmentVariable);
+        }));
+    }
+
+    private static void SortSavedRules(ObservableCollection<PermissionRule> values)
+    {
+        SortCollection(values, Comparer<PermissionRule>.Create((left, right) =>
+        {
+            var byKind = StringComparer.OrdinalIgnoreCase.Compare(left.Kind, right.Kind);
+            return byKind != 0
+                ? byKind
+                : StringComparer.OrdinalIgnoreCase.Compare(left.Summary, right.Summary);
+        }));
+    }
+
+    private static void SortCollection<T>(ObservableCollection<T> values, IComparer<T> comparer)
+        where T : class
+    {
+        var sorted = values.Order(comparer).ToArray();
+        for (var targetIndex = 0; targetIndex < sorted.Length; targetIndex++)
+        {
+            if (ReferenceEquals(values[targetIndex], sorted[targetIndex]))
+            {
+                continue;
+            }
+
+            var currentIndex = values.IndexOf(sorted[targetIndex]);
+            if (currentIndex >= 0)
+            {
+                values.Move(currentIndex, targetIndex);
+            }
         }
     }
 
@@ -365,6 +531,10 @@ public partial class SettingsWindow : Window
         Settings.WorkingDirectory = string.IsNullOrWhiteSpace(WorkingDirectoryBox.Text) ? null : WorkingDirectoryBox.Text.Trim();
         Settings.Permissions.AllowMcpByDefault = AllowMcpCheckBox.IsChecked == true;
         Settings.Permissions.AllowCustomToolsByDefault = AllowCustomToolsCheckBox.IsChecked == true;
+        SortUserSecrets(Settings.UserSecrets);
+        SortStringCollection(Settings.Permissions.AllowedTools);
+        SortStringCollection(Settings.Permissions.AllowedHosts);
+        SortSavedRules(Settings.Permissions.SavedRules);
         Settings.DefaultSystemPrompt = string.IsNullOrWhiteSpace(SystemPromptBox.Text) ? null : SystemPromptBox.Text;
         Settings.EnableDebugLogging = EnableDebugLoggingCheckBox.IsChecked == true;
         Settings.EnableResponseBuffering = ResponseBufferingCheckBox.IsChecked == true;

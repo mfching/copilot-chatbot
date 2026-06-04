@@ -539,6 +539,11 @@
                                         Width="72" Click="RemoveSecret_Click" />
                             </Grid>
                         </Border>
+                        <TextBox x:Name="SecretFilterBox"
+                                 DockPanel.Dock="Top"
+                                 Margin="0,0,0,10"
+                                 TextChanged="SecretFilterBox_TextChanged"
+                                 ToolTip="Filter user secrets" />
                         <Border Style="{StaticResource CardBorder}" Padding="0">
                             <DataGrid x:Name="SecretsGrid" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single">
                                 <DataGrid.Columns>
@@ -626,6 +631,11 @@
                                         Style="{StaticResource SmallButton}" Width="72"
                                         Click="RemoveSavedRule_Click" />
                             </Grid>
+                            <TextBox x:Name="SavedRuleFilterBox"
+                                     DockPanel.Dock="Top"
+                                     Margin="0,0,0,8"
+                                     TextChanged="SavedRuleFilterBox_TextChanged"
+                                     ToolTip="Filter saved approvals" />
                             <Border Style="{StaticResource CardBorder}" Padding="0">
                                 <DataGrid x:Name="SavedRulesGrid" AutoGenerateColumns="False" IsReadOnly="True">
                                     <DataGrid.Columns>
@@ -726,6 +736,11 @@
                                         Width="64" Click="ClearTools_Click" />
                             </Grid>
                         </Border>
+                        <TextBox x:Name="ToolFilterBox"
+                                 DockPanel.Dock="Top"
+                                 Margin="0,0,0,10"
+                                 TextChanged="ToolFilterBox_TextChanged"
+                                 ToolTip="Filter tools" />
                         <Border Style="{StaticResource CardBorder}" Padding="0">
                             <ListBox x:Name="ToolsList" BorderThickness="0">
                                 <ListBox.ItemTemplate>
@@ -779,6 +794,12 @@
                                         Width="64" Click="ClearHosts_Click" />
                             </Grid>
                         </Border>
+                        <TextBox x:Name="HostFilterBox"
+                                 DockPanel.Dock="Top"
+                                 Margin="0,0,0,10"
+                                 TextChanged="HostFilterBox_TextChanged"
+                                 ToolTip="Filter hosts"
+                                 />
                         <Border Style="{StaticResource CardBorder}" Padding="0">
                             <ListBox x:Name="HostsList" BorderThickness="0">
                                 <ListBox.ItemTemplate>
