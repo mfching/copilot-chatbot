@@ -11,7 +11,7 @@ public sealed class AppSettings
     [JsonIgnore]
     public string? CommandLineGitHubToken { get; set; }
     [JsonIgnore]
-    public string? EffectiveGitHubToken => string.IsNullOrWhiteSpace(CommandLineGitHubToken) ? GitHubToken : CommandLineGitHubToken;
+    public string? EffectiveGitHubToken => GitHubToken;
     public AppThemeMode Theme { get; set; } = AppThemeMode.System;
     public ObservableCollection<UserSecretSetting> UserSecrets { get; set; } = [];
     public string? SelectedModelId { get; set; }

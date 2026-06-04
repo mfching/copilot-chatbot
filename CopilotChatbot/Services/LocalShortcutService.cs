@@ -173,7 +173,6 @@ public sealed class LocalShortcutService : ILocalShortcutService
         };
 
         AddEnvironmentValue(lines, "PATH");
-        AddEnvironmentValue(lines, "GH_TOKEN", redact: true);
         AddEnvironmentValue(lines, "GITHUB_TOKEN", redact: true);
 
         if (settings.UserSecrets.Count > 0)

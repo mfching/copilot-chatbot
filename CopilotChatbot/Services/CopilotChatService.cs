@@ -21,6 +21,8 @@ public sealed class CopilotChatService : IAsyncDisposable
     private CopilotClient? _client;
     private readonly ConcurrentDictionary<ChatSessionView, CopilotSession> _sessions = [];
     private readonly ConcurrentDictionary<string, byte> _sessionPermissionApprovals = [];
+    private readonly ConcurrentDictionary<string, byte> _sessionHostApprovals = [];
+    private readonly ConcurrentDictionary<string, byte> _sessionToolApprovals = [];
     private readonly ConcurrentQueue<ChatUpdate> _pendingChatUpdates = new();
     private readonly ConcurrentDictionary<ChatSessionView, ResponseBufferOptions> _responseBufferOptions = [];
     private readonly Dictionary<string, McpServerConfig> _mcpServerConfigs = new();
@@ -185,7 +187,7 @@ public sealed class CopilotChatService : IAsyncDisposable
         try
         {
             var client = await EnsureClientAsync(settings, cancellationToken);
-            var token = await ResolveGitHubTokenAsync(settings.EffectiveGitHubToken);
+            var token = await ResolveGitHubTokenAsync(settings.CommandLineGitHubToken);
             probe = await client.CreateSessionAsync(new SessionConfig
             {
                 Model = settings.SelectedModelId,
@@ -330,7 +332,7 @@ public sealed class CopilotChatService : IAsyncDisposable
         try
         {
             var client = await EnsureClientAsync(settings, cancellationToken);
-            var token = await ResolveGitHubTokenAsync(settings.EffectiveGitHubToken);
+            var token = await ResolveGitHubTokenAsync(settings.CommandLineGitHubToken);
             probe = await client.CreateSessionAsync(new SessionConfig
             {
                 Model = !string.IsNullOrWhiteSpace(spec.ModelId) ? spec.ModelId : settings.SelectedModelId,
@@ -393,7 +395,7 @@ public sealed class CopilotChatService : IAsyncDisposable
 
         var client = await EnsureClientAsync(settings);
         await client.GetSessionMetadataAsync(chat.CopilotSessionId);
-        var token = await ResolveGitHubTokenAsync(settings.EffectiveGitHubToken);
+        var token = await ResolveGitHubTokenAsync(settings.CommandLineGitHubToken);
         var customAgents = LoadAgentsFromDirectories(settings);
         if (customAgents?.Count > 0)
         {
@@ -439,21 +441,22 @@ public sealed class CopilotChatService : IAsyncDisposable
             return _client;
         }
 
-        var token = await ResolveGitHubTokenAsync(settings.EffectiveGitHubToken);
+        var token = await ResolveGitHubTokenAsync(settings.CommandLineGitHubToken);
         var env = CreateProcessEnvironment();
         foreach (var secret in settings.UserSecrets.Where(s => !string.IsNullOrWhiteSpace(s.EnvironmentVariable)))
         {
             env[secret.EnvironmentVariable] = _settingsStore.UnprotectSecret(secret.EncryptedValue);
         }
 
+        var environmentToken = await ResolveGitHubTokenAsync(settings.EffectiveGitHubToken);
+
         // Inject the GitHub token into the child process environment so the builtin
         // github-mcp-server (and any gh-based tools) can authenticate to the GitHub API.
         // The Copilot CLI's GitHubToken option only authenticates the chat API; MCP servers
-        // spawned as subprocesses rely on GH_TOKEN / GITHUB_TOKEN environment variables.
-        if (!string.IsNullOrWhiteSpace(token))
+        // spawned as subprocesses rely on GITHUB_TOKEN.
+        if (!string.IsNullOrWhiteSpace(environmentToken))
         {
-            env["GH_TOKEN"] = token;
-            env["GITHUB_TOKEN"] = token;
+            env["GITHUB_TOKEN"] = environmentToken;
         }
 
         var bundledCliPath = ResolveBundledCliPath();
@@ -755,7 +758,7 @@ public sealed class CopilotChatService : IAsyncDisposable
         }
 
         var client = await EnsureClientAsync(settings);
-        var token = await ResolveGitHubTokenAsync(settings.EffectiveGitHubToken);
+        var token = await ResolveGitHubTokenAsync(settings.CommandLineGitHubToken);
         var customAgents = LoadAgentsFromDirectories(settings);
         if (customAgents?.Count > 0)
         {
@@ -929,14 +932,14 @@ public sealed class CopilotChatService : IAsyncDisposable
             return true;
         }
 
-        if (kind.Equals("url", StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(host))
         {
             // Well-known GitHub API hosts are implicitly approved — the builtin github-mcp-server
             // always calls these, and the user is already authenticated via GitHub token.
-            if (_implicitlyApprovedHosts.Contains(host))
+            if (_implicitlyApprovedHosts.Any(approvedHost => HostMatches(approvedHost, host)))
                 return true;
 
-            if (settings.Permissions.AllowedHosts.Contains(host, StringComparer.OrdinalIgnoreCase))
+            if (settings.Permissions.AllowedHosts.Any(allowedHost => HostMatches(allowedHost, host)))
                 return true;
         }
 
@@ -1008,9 +1011,10 @@ public sealed class CopilotChatService : IAsyncDisposable
 
     private static void SavePermissionApproval(PermissionPrompt prompt, AppSettings settings)
     {
-        if (prompt.Kind.Equals("url", StringComparison.OrdinalIgnoreCase) &&
-            AddUnique(settings.Permissions.AllowedHosts, prompt.Host))
+        var host = NormalizeHost(prompt.Host);
+        if (!string.IsNullOrWhiteSpace(host))
         {
+            AddUnique(settings.Permissions.AllowedHosts, host);
             return;
         }
 
@@ -1044,7 +1048,7 @@ public sealed class CopilotChatService : IAsyncDisposable
                     ToolName = prompt.ToolName ?? "",
                     FileName = prompt.FileName ?? "",
                     CommandIdentifiers = command.Identifier,
-                    Host = prompt.Host ?? ""
+                    Host = host
                 };
 
                 if (!settings.Permissions.SavedRules.Any(existing =>
@@ -1063,7 +1067,7 @@ public sealed class CopilotChatService : IAsyncDisposable
             FileName = prompt.FileName ?? "",
             Command = prompt.Command ?? "",
             CommandIdentifiers = FormatCommandIdentifiers(prompt.Commands),
-            Host = prompt.Host ?? ""
+            Host = host
         };
 
         if (!settings.Permissions.SavedRules.Any(existing =>
@@ -1082,7 +1086,7 @@ public sealed class CopilotChatService : IAsyncDisposable
                PathMatches(rule.FileName, file) &&
                ValueMatches(rule.Command, command) &&
                CommandIdentifiersMatch(rule.CommandIdentifiers, commandIdentifiers) &&
-               ValueMatches(rule.Host, host);
+               HostValueMatches(rule.Host, host);
     }
 
     private static bool AllCommandIdentifiersAllowed(
@@ -1099,6 +1103,19 @@ public sealed class CopilotChatService : IAsyncDisposable
 
     private bool IsAllowedForSession(PermissionPrompt prompt)
     {
+        if (!string.IsNullOrWhiteSpace(prompt.Host) &&
+            _sessionHostApprovals.Keys.Any(allowedHost => HostMatches(allowedHost, prompt.Host)))
+        {
+            return true;
+        }
+
+        if ((IsCustomToolPermissionKind(prompt.Kind) || IsMcpPermissionKind(prompt.Kind)) &&
+            !string.IsNullOrWhiteSpace(prompt.ToolName) &&
+            _sessionToolApprovals.ContainsKey(NormalizeKey(prompt.ToolName)))
+        {
+            return true;
+        }
+
         if (prompt.Commands.Count == 0)
             return false;
 
@@ -1112,6 +1129,20 @@ public sealed class CopilotChatService : IAsyncDisposable
 
     private void SaveSessionPermissionApproval(PermissionPrompt prompt)
     {
+        var host = NormalizeHost(prompt.Host);
+        if (!string.IsNullOrWhiteSpace(host))
+        {
+            _sessionHostApprovals.TryAdd(host, 0);
+            return;
+        }
+
+        if ((IsCustomToolPermissionKind(prompt.Kind) || IsMcpPermissionKind(prompt.Kind)) &&
+            !string.IsNullOrWhiteSpace(prompt.ToolName))
+        {
+            _sessionToolApprovals.TryAdd(NormalizeKey(prompt.ToolName), 0);
+            return;
+        }
+
         if (prompt.Commands.Count == 0)
         {
             _sessionPermissionApprovals.TryAdd(BuildPermissionKey(prompt), 0);
@@ -1131,6 +1162,21 @@ public sealed class CopilotChatService : IAsyncDisposable
     private static bool ValueMatches(string ruleValue, string requestedValue)
         => string.IsNullOrWhiteSpace(ruleValue) ||
            ruleValue.Equals(requestedValue, StringComparison.OrdinalIgnoreCase);
+
+    private static bool HostValueMatches(string ruleValue, string requestedValue)
+        => string.IsNullOrWhiteSpace(ruleValue) || HostMatches(ruleValue, requestedValue);
+
+    private static bool HostMatches(string? allowedHost, string? requestedHost)
+    {
+        allowedHost = NormalizeHost(allowedHost);
+        requestedHost = NormalizeHost(requestedHost);
+
+        if (string.IsNullOrWhiteSpace(allowedHost) || string.IsNullOrWhiteSpace(requestedHost))
+            return false;
+
+        return requestedHost.Equals(allowedHost, StringComparison.OrdinalIgnoreCase) ||
+               requestedHost.EndsWith("." + allowedHost, StringComparison.OrdinalIgnoreCase);
+    }
 
     private static bool IsMcpPermissionKind(string kind)
         => kind.Equals("mcp", StringComparison.OrdinalIgnoreCase);
@@ -1431,6 +1477,12 @@ public sealed class CopilotChatService : IAsyncDisposable
 
     private static string NormalizeKey(string? value)
         => string.IsNullOrWhiteSpace(value) ? "" : value.Trim().ToUpperInvariant();
+
+    private static string NormalizeHost(string? value)
+    {
+        value = TryGetHost(value)?.Trim().TrimEnd('.');
+        return string.IsNullOrWhiteSpace(value) ? "" : value.ToLowerInvariant();
+    }
 
     private void HandleEvent(ChatSessionView chat, SessionEvent evt)
     {
