@@ -7,8 +7,10 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using CopilotChatbot.Models;
-using GitHub.Copilot.SDK;
+using GitHub.Copilot;
 using System.Management.Automation.Language;
+using AppPermissionRule = CopilotChatbot.Models.PermissionRule;
+using PermissionDecision = GitHub.Copilot.Rpc.PermissionDecision;
 
 namespace CopilotChatbot.Services;
 
@@ -77,7 +79,7 @@ public sealed class CopilotChatService : IAsyncDisposable
         var auth = await client.GetAuthStatusAsync(cancellationToken);
 
         return new CopilotRuntimeStatus(
-            client.State == ConnectionState.Connected,
+            true,
             status.Version ?? "unknown",
             status.ProtocolVersion,
             auth.IsAuthenticated,
@@ -197,7 +199,7 @@ public sealed class CopilotChatService : IAsyncDisposable
             });
 
             var tcs = new TaskCompletionSource<CopilotUsageStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
-            probe.On(evt =>
+            probe.On<SessionEvent>(evt =>
             {
                 _logger.Log("FETCH-USAGE-EVENT", evt.GetType().Name);
                 if (evt is AssistantUsageEvent usage)
@@ -286,7 +288,7 @@ public sealed class CopilotChatService : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var subscription = session.On(evt =>
+        var subscription = session.On<SessionEvent>(evt =>
         {
             if (evt is AssistantMessageEvent msg && !string.IsNullOrWhiteSpace(msg.Data.Content))
             {
@@ -344,7 +346,7 @@ public sealed class CopilotChatService : IAsyncDisposable
             });
 
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-            probe.On(evt =>
+            probe.On<SessionEvent>(evt =>
             {
                 if (evt is AssistantMessageEvent msg && !string.IsNullOrWhiteSpace(msg.Data.Content))
                 {
@@ -430,7 +432,7 @@ public sealed class CopilotChatService : IAsyncDisposable
         chat.CopilotSessionId = session.SessionId;
         chat.IsSessionMissing = false;
         _logger.Log("SESSION", $"Resumed session {session.SessionId} | model={model?.Id ?? settings.SelectedModelId} | reasoning={reasoningEffort ?? "default"}");
-        session.On(evt => HandleEvent(chat, evt));
+        session.On<SessionEvent>(evt => HandleEvent(chat, evt));
         _sessions[chat] = session;
     }
 
@@ -465,10 +467,10 @@ public sealed class CopilotChatService : IAsyncDisposable
             : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var client = new CopilotClient(new CopilotClientOptions
         {
-            CliPath = bundledCliPath,
+            Connection = string.IsNullOrWhiteSpace(bundledCliPath) ? null : RuntimeConnection.ForStdio(bundledCliPath),
             GitHubToken = token,
             Environment = env,
-            Cwd = cwd
+            WorkingDirectory = cwd
         });
 
         try
@@ -673,6 +675,7 @@ public sealed class CopilotChatService : IAsyncDisposable
             httpCfg.Headers = CreateStringDictionary(headersProp);
         if (cfg.TryGetProperty("timeout", out var timeoutProp) && timeoutProp.TryGetInt32(out var timeout))
             httpCfg.Timeout = timeout;
+        httpCfg.Tools ??= [];
         ApplyMcpTools(cfg, httpCfg.Tools);
         return httpCfg;
     }
@@ -709,7 +712,8 @@ public sealed class CopilotChatService : IAsyncDisposable
             stdio.Env = envProp.EnumerateObject()
                 .ToDictionary(e => e.Name, e => e.Value.GetString() ?? "");
         if (cfg.TryGetProperty("cwd", out var cwdProp))
-            stdio.Cwd = cwdProp.GetString();
+            stdio.WorkingDirectory = cwdProp.GetString();
+        stdio.Tools ??= [];
         ApplyMcpTools(cfg, stdio.Tools);
         return stdio;
     }
@@ -791,7 +795,7 @@ public sealed class CopilotChatService : IAsyncDisposable
 
         chat.CopilotSessionId = session.SessionId;
         _logger.Log("SESSION", $"Created session {session.SessionId} | model={model?.Id ?? settings.SelectedModelId} | reasoning={reasoningEffort ?? "default"}");
-        session.On(evt => HandleEvent(chat, evt));
+        session.On<SessionEvent>(evt => HandleEvent(chat, evt));
         _sessions[chat] = session;
         return session;
     }
@@ -833,7 +837,7 @@ public sealed class CopilotChatService : IAsyncDisposable
         }
     }
 
-    private async Task<PermissionRequestResult> EvaluatePermissionAsync(ChatSessionView chat, PermissionRequest request, AppSettings settings)
+    private async Task<PermissionDecision> EvaluatePermissionAsync(ChatSessionView chat, PermissionRequest request, AppSettings settings)
     {
         var prompt = ToPermissionPrompt(request) with { SessionTitle = chat.Title };
 
@@ -841,7 +845,7 @@ public sealed class CopilotChatService : IAsyncDisposable
             !settings.Permissions.AllowMemoryByDefault)
         {
             _logger.Log("PERMISSION-AUTO", "Kind=memory | rejected because memory is disabled");
-            return new PermissionRequestResult { Kind = PermissionRequestResultKind.Rejected };
+            return PermissionDecision.Reject("Memory is disabled in settings.");
         }
 
         if (TryCreatePromptForMissingCommands(prompt, settings, out var missingCommandPrompt))
@@ -849,7 +853,7 @@ public sealed class CopilotChatService : IAsyncDisposable
             if (missingCommandPrompt.Commands.Count == 0)
             {
                 _logger.Log("PERMISSION-AUTO", $"Kind={prompt.Kind} Tool={prompt.ToolName} File={prompt.FileName} Host={prompt.Host} Commands={FormatCommandIdentifiers(prompt.Commands)} | auto-approved by command whitelist");
-                return new PermissionRequestResult { Kind = PermissionRequestResultKind.Approved };
+                return PermissionDecision.ApproveOnce();
             }
 
             prompt = missingCommandPrompt;
@@ -860,7 +864,7 @@ public sealed class CopilotChatService : IAsyncDisposable
         if (IsAllowedBySettings(prompt, settings) || IsAllowedForSession(prompt) || _sessionPermissionApprovals.ContainsKey(key))
         {
             _logger.Log("PERMISSION-AUTO", $"Kind={prompt.Kind} Tool={prompt.ToolName} File={prompt.FileName} Host={prompt.Host} Commands={FormatCommandIdentifiers(prompt.Commands)} | auto-approved");
-            return new PermissionRequestResult { Kind = PermissionRequestResultKind.Approved };
+            return PermissionDecision.ApproveOnce();
         }
 
         _logger.Log("PERMISSION-REQUEST", $"Kind={prompt.Kind} Tool={prompt.ToolName} File={prompt.FileName} Host={prompt.Host} Commands={FormatCommandIdentifiers(prompt.Commands)} Command={prompt.Command}");
@@ -877,12 +881,9 @@ public sealed class CopilotChatService : IAsyncDisposable
             _settingsStore.Save(settings);
         }
 
-        return new PermissionRequestResult
-        {
-            Kind = decision != PermissionPromptDecision.Deny
-                ? PermissionRequestResultKind.Approved
-                : PermissionRequestResultKind.Rejected
-        };
+        return decision != PermissionPromptDecision.Deny
+            ? PermissionDecision.ApproveOnce()
+            : PermissionDecision.Reject();
     }
 
     private static readonly HashSet<string> _implicitlyApprovedHosts = new(StringComparer.OrdinalIgnoreCase)
@@ -1042,7 +1043,7 @@ public sealed class CopilotChatService : IAsyncDisposable
         {
             foreach (var command in prompt.Commands)
             {
-                var commandRule = new PermissionRule
+                var commandRule = new AppPermissionRule
                 {
                     Kind = prompt.Kind,
                     ToolName = prompt.ToolName ?? "",
@@ -1060,7 +1061,7 @@ public sealed class CopilotChatService : IAsyncDisposable
             return;
         }
 
-        var exactRule = new PermissionRule
+        var exactRule = new AppPermissionRule
         {
             Kind = prompt.Kind,
             ToolName = prompt.ToolName ?? "",
@@ -1077,7 +1078,7 @@ public sealed class CopilotChatService : IAsyncDisposable
         }
     }
 
-    private static bool RuleMatches(PermissionRule rule, string kind, string tool, string file, string command, string host, IEnumerable<string> commandIdentifiers)
+    private static bool RuleMatches(AppPermissionRule rule, string kind, string tool, string file, string command, string host, IEnumerable<string> commandIdentifiers)
     {
         if (!rule.Kind.Equals(kind, StringComparison.OrdinalIgnoreCase))
             return false;
@@ -1091,7 +1092,7 @@ public sealed class CopilotChatService : IAsyncDisposable
 
     private static bool AllCommandIdentifiersAllowed(
         IReadOnlyCollection<string> commandIdentifiers,
-        IEnumerable<PermissionRule> rules,
+        IEnumerable<AppPermissionRule> rules,
         string kind,
         string tool,
         string file,
@@ -1728,7 +1729,7 @@ public sealed class CopilotChatService : IAsyncDisposable
 
     private static CopilotUsageStatus ToUsageStatus(AssistantUsageData data)
     {
-        var quota = data.QuotaSnapshots?.Values.FirstOrDefault();
+        var quota = GetQuotaSnapshot(data);
         return new CopilotUsageStatus(
             data.Model ?? "unknown model",
             data.InputTokens,
@@ -1740,6 +1741,32 @@ public sealed class CopilotChatService : IAsyncDisposable
             quota?.RemainingPercentage,
             quota?.ResetDate);
     }
+
+    private static QuotaSnapshot? GetQuotaSnapshot(AssistantUsageData data)
+    {
+        var quotaSnapshots = data.GetType()
+            .GetProperty("QuotaSnapshots", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+            ?.GetValue(data);
+
+        if (quotaSnapshots is not System.Collections.IDictionary dictionary || dictionary.Count == 0)
+        {
+            return null;
+        }
+
+        var quota = dictionary.Values.Cast<object>().FirstOrDefault();
+        if (quota is null)
+        {
+            return null;
+        }
+
+        return new QuotaSnapshot(
+            GetLong(quota, "UsedRequests"),
+            GetLong(quota, "EntitlementRequests"),
+            GetDouble(quota, "RemainingPercentage"),
+            GetDateTimeOffset(quota, "ResetDate"));
+    }
+
+    private sealed record QuotaSnapshot(long? UsedRequests, long? EntitlementRequests, double? RemainingPercentage, DateTimeOffset? ResetDate);
 
     private void AddOrUpdate(ChatSessionView chat, ChatMessageKind kind, string? content, string key, bool append = false)
     {
@@ -1937,6 +1964,49 @@ public sealed class CopilotChatService : IAsyncDisposable
     {
         return source.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase)
             ?.GetValue(source)?.ToString();
+    }
+
+    private static long? GetLong(object source, string propertyName)
+    {
+        var value = source.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.IgnoreCase)
+            ?.GetValue(source);
+        return value switch
+        {
+            long longValue => longValue,
+            int intValue => intValue,
+            double doubleValue => (long)doubleValue,
+            string stringValue when long.TryParse(stringValue, out var parsed) => parsed,
+            _ => null
+        };
+    }
+
+    private static double? GetDouble(object source, string propertyName)
+    {
+        var value = source.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.IgnoreCase)
+            ?.GetValue(source);
+        return value switch
+        {
+            double doubleValue => doubleValue,
+            float floatValue => floatValue,
+            decimal decimalValue => (double)decimalValue,
+            long longValue => longValue,
+            int intValue => intValue,
+            string stringValue when double.TryParse(stringValue, out var parsed) => parsed,
+            _ => null
+        };
+    }
+
+    private static DateTimeOffset? GetDateTimeOffset(object source, string propertyName)
+    {
+        var value = source.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.IgnoreCase)
+            ?.GetValue(source);
+        return value switch
+        {
+            DateTimeOffset dateTimeOffset => dateTimeOffset,
+            DateTime dateTime => dateTime,
+            string stringValue when DateTimeOffset.TryParse(stringValue, out var parsed) => parsed,
+            _ => null
+        };
     }
 
     private static IEnumerable<KeyValuePair<string, string>> GetAllStringProperties(object source)
