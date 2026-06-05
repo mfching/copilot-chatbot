@@ -155,6 +155,17 @@ main.streaming .article-btn { pointer-events:none; color:var(--icon-dim); opacit
 .prompt-input-row { display:flex; gap:6px; align-items:flex-end; }
 .prompt-input { min-width:220px; min-height:68px; max-height:220px; resize:vertical; flex:1; border:1px solid var(--border); border-radius:6px; background:var(--card); color:var(--text); padding:7px 9px; font:13px/1.35 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
 .prompt-answer { color:var(--muted); font-size:12px; }
+.agent-card { display:flex; flex-direction:column; gap:10px; }
+.agent-bulk-row { display:flex; flex-wrap:wrap; gap:6px; }
+.agent-list { display:flex; flex-direction:column; gap:6px; }
+.agent-row { display:grid; grid-template-columns:22px 1fr; gap:7px; align-items:start; padding:7px 8px; border:1px solid var(--border); border-radius:6px; background:var(--bg); }
+.agent-row input { margin-top:2px; }
+.agent-name { font-weight:700; font-size:13px; }
+.agent-meta { color:var(--muted); font-size:11px; margin-top:1px; }
+.agent-desc { color:var(--muted); font-size:12px; margin-top:3px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.agent-default-row { display:flex; flex-wrap:wrap; gap:7px; align-items:center; }
+.agent-default-row label { font-size:12px; font-weight:700; }
+.agent-select { min-width:220px; max-width:100%; border:1px solid var(--border); border-radius:6px; background:var(--card); color:var(--text); padding:6px 8px; font:13px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
 .frame-body > :first-child { margin-top:0; }
 .frame-body > :last-child { margin-bottom:0; }
 .user .head, .user details > summary.head { background:var(--user-head); }
@@ -236,6 +247,49 @@ document.addEventListener('click', e => {
   const mode = button.dataset.promptMode || 'choice';
   const value = mode === 'freeform' ? (input?.value || '') : (button.dataset.promptValue || '');
   chrome.webview.postMessage({ type: 'promptResponse', id: article.dataset.mid, value, mode });
+});
+function updateAgentDefaultOptions(article) {
+  const select = article?.querySelector('[data-agent-default]');
+  if (!select) return;
+  const enabled = new Set(Array.from(article.querySelectorAll('[data-agent-enabled]:checked')).map(input => input.value));
+  Array.from(select.options).forEach(option => {
+    option.disabled = option.value !== '' && !enabled.has(option.value);
+  });
+  if (select.value !== '' && !enabled.has(select.value)) {
+    select.value = '';
+  }
+}
+document.addEventListener('change', e => {
+  const input = e.target.closest('[data-agent-enabled]');
+  if (!input) return;
+  updateAgentDefaultOptions(input.closest('article[data-mid]'));
+});
+document.addEventListener('click', e => {
+  const bulkButton = e.target.closest('[data-agent-bulk]');
+  if (bulkButton && !bulkButton.disabled) {
+    e.preventDefault();
+    e.stopPropagation();
+    const article = bulkButton.closest('article[data-mid]');
+    if (!article) return;
+    const checked = bulkButton.dataset.agentBulk === 'all';
+    article.querySelectorAll('[data-agent-enabled]').forEach(input => {
+      if (!input.disabled) input.checked = checked;
+    });
+    updateAgentDefaultOptions(article);
+    return;
+  }
+});
+document.addEventListener('click', e => {
+  const button = e.target.closest('[data-agent-submit]');
+  if (!button || button.disabled) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const article = button.closest('article[data-mid]');
+  if (!article) return;
+  updateAgentDefaultOptions(article);
+  const enabled = Array.from(article.querySelectorAll('[data-agent-enabled]:checked')).map(input => input.value);
+  const defaultAgent = article.querySelector('[data-agent-default]')?.value || '';
+  chrome.webview.postMessage({ type: 'promptResponse', id: article.dataset.mid, value: JSON.stringify({ enabled, defaultAgent }), mode: 'agent' });
 });
 document.addEventListener('keydown', e => {
   const input = e.target.closest('[data-prompt-input]');
@@ -504,6 +558,11 @@ document.addEventListener('toggle', e => {
     private static string RenderPromptContent(ChatMessage message)
     {
         var prompt = message.Prompt!;
+        if (prompt.Type.Equals("agent", StringComparison.OrdinalIgnoreCase))
+        {
+            return RenderAgentPromptContent(message, prompt);
+        }
+
         var disabled = prompt.IsAnswered ? " disabled" : "";
         var question = WebUtility.HtmlEncode(message.Content);
         var answer = prompt.IsAnswered
@@ -543,6 +602,79 @@ document.addEventListener('toggle', e => {
   <div class="prompt-question">{{question}}</div>
   <div class="{{actionClass}}">{{buttons}}</div>
   {{input}}
+  {{answer}}
+</div>
+""";
+    }
+
+    private static string RenderAgentPromptContent(ChatMessage message, ChatPromptState prompt)
+    {
+        var disabled = prompt.IsAnswered ? " disabled" : "";
+        var question = WebUtility.HtmlEncode(message.Content);
+        var enabledNames = prompt.AgentOptions
+            .Where(agent => agent.IsEnabled)
+            .Select(agent => agent.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var defaultAgent = prompt.DefaultAgentName ?? "";
+        if (!string.IsNullOrWhiteSpace(defaultAgent) && !enabledNames.Contains(defaultAgent))
+        {
+            defaultAgent = "";
+        }
+
+        var rows = new StringBuilder();
+        foreach (var agent in prompt.AgentOptions.OrderBy(agent => agent.DisplayName, StringComparer.OrdinalIgnoreCase))
+        {
+            var checkedAttr = agent.IsEnabled ? " checked" : "";
+            var name = WebUtility.HtmlEncode(agent.Name);
+            var display = WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(agent.DisplayName) ? agent.Name : agent.DisplayName);
+            var source = WebUtility.HtmlEncode(agent.Source);
+            var description = string.IsNullOrWhiteSpace(agent.Description)
+                ? ""
+                : $"<div class=\"agent-desc\">{WebUtility.HtmlEncode(agent.Description)}</div>";
+            rows.Append($$"""
+<label class="agent-row">
+  <input type="checkbox" data-agent-enabled="1" value="{{name}}"{{checkedAttr}}{{disabled}}>
+  <span>
+    <span class="agent-name">{{display}}</span>
+    <span class="agent-meta">{{name}}{{(string.IsNullOrWhiteSpace(source) ? "" : $" · {source}")}}</span>
+    {{description}}
+  </span>
+</label>
+""");
+        }
+
+        var options = new StringBuilder();
+        options.Append($"<option value=\"\"{(string.IsNullOrWhiteSpace(defaultAgent) ? " selected" : "")}>(default agent)</option>");
+        foreach (var agent in prompt.AgentOptions.OrderBy(agent => agent.DisplayName, StringComparer.OrdinalIgnoreCase))
+        {
+            var value = WebUtility.HtmlEncode(agent.Name);
+            var label = WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(agent.DisplayName) ? agent.Name : agent.DisplayName);
+            var selected = agent.Name.Equals(defaultAgent, StringComparison.OrdinalIgnoreCase) ? " selected" : "";
+            var optionDisabled = agent.IsEnabled ? "" : " disabled";
+            options.Append($"<option value=\"{value}\"{selected}{optionDisabled}>{label}</option>");
+        }
+
+        var answer = prompt.IsAnswered
+            ? $"<div class=\"prompt-answer\">Submitted: {WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(prompt.Answer) ? "(empty)" : prompt.Answer)}</div>"
+            : "";
+        var bulkButtons = $$"""
+<div class="agent-bulk-row">
+  <button class="prompt-btn" data-agent-bulk="all"{{disabled}}>Select all</button>
+  <button class="prompt-btn" data-agent-bulk="none"{{disabled}}>Select none</button>
+</div>
+""";
+
+        return $$"""
+<div class="prompt-card agent-card">
+  <div class="prompt-question">{{question}}</div>
+  {{bulkButtons}}
+  <div class="agent-list">{{rows}}</div>
+  {{bulkButtons}}
+  <div class="agent-default-row">
+    <label for="agent-default-{{WebUtility.HtmlEncode(message.Id)}}">Default agent</label>
+    <select id="agent-default-{{WebUtility.HtmlEncode(message.Id)}}" class="agent-select" data-agent-default="1"{{disabled}}>{{options}}</select>
+    <button class="prompt-btn primary" data-agent-submit="1"{{disabled}}>Apply</button>
+  </div>
   {{answer}}
 </div>
 """;

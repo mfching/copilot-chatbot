@@ -21,6 +21,7 @@ public partial class SettingsWindow : Window
     private readonly ICollectionView _toolsView;
     private readonly ICollectionView _hostsView;
     private readonly ICollectionView _savedRulesView;
+    private bool _updatingSecretEditor;
     public AppSettings Settings { get; }
 
     public SettingsWindow(SettingsStore store, AppSettings settings, DebugLogger debugLogger)
@@ -77,23 +78,8 @@ public partial class SettingsWindow : Window
 
     private void AddSecret_Click(object sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(SecretEnvBox.Text))
-        {
-            return;
-        }
-
-        Settings.UserSecrets.Add(new UserSecretSetting
-        {
-            Name = SecretNameBox.Text.Trim(),
-            EnvironmentVariable = SecretEnvBox.Text.Trim(),
-            EncryptedValue = _store.ProtectSecret(GetSecretValue())
-        });
-        SortUserSecrets(Settings.UserSecrets);
-        _secretsView.Refresh();
-        SecretNameBox.Clear();
-        SecretEnvBox.Clear();
-        SecretValueBox.Clear();
-        SecretValueTextBox.Clear();
+        if (UpsertSecretFromEditor())
+            ClearSecretEditor();
     }
 
     private void RemoveSecret_Click(object sender, RoutedEventArgs e)
@@ -102,6 +88,7 @@ public partial class SettingsWindow : Window
         {
             Settings.UserSecrets.Remove(secret);
             _secretsView.Refresh();
+            ClearSecretEditor();
         }
     }
 
@@ -111,6 +98,106 @@ public partial class SettingsWindow : Window
         {
             Settings.UserSecrets.Remove(secret);
             _secretsView.Refresh();
+            if (ReferenceEquals(SecretsGrid.SelectedItem, secret))
+                ClearSecretEditor();
+        }
+    }
+
+    private void SecretsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingSecretEditor)
+        {
+            return;
+        }
+
+        if (SecretsGrid.SelectedItem is not UserSecretSetting secret)
+        {
+            return;
+        }
+
+        _updatingSecretEditor = true;
+        try
+        {
+            SecretNameBox.Text = secret.Name;
+            SecretEnvBox.Text = secret.EnvironmentVariable;
+            SecretValueBox.Password = _store.UnprotectSecret(secret.EncryptedValue);
+            SecretValueTextBox.Text = SecretValueBox.Password;
+            SecretValueTextBox.Visibility = Visibility.Collapsed;
+            SecretValueBox.Visibility = Visibility.Visible;
+            RevealSecretIcon.Symbol = SymbolRegular.Eye20;
+        }
+        finally
+        {
+            _updatingSecretEditor = false;
+        }
+    }
+
+    private bool UpsertSecretFromEditor()
+    {
+        var envName = SecretEnvBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(envName))
+        {
+            return false;
+        }
+
+        var displayName = SecretNameBox.Text.Trim();
+        var value = GetSecretValue();
+        var selected = SecretsGrid.SelectedItem as UserSecretSetting;
+        var existing = selected is not null && Settings.UserSecrets.Contains(selected)
+            ? selected
+            : Settings.UserSecrets.FirstOrDefault(secret =>
+                string.Equals(secret.EnvironmentVariable, envName, StringComparison.OrdinalIgnoreCase));
+
+        if (existing is null)
+        {
+            Settings.UserSecrets.Add(new UserSecretSetting
+            {
+                Name = displayName,
+                EnvironmentVariable = envName,
+                EncryptedValue = _store.ProtectSecret(value)
+            });
+        }
+        else
+        {
+            existing.Name = displayName;
+            existing.EnvironmentVariable = envName;
+            existing.EncryptedValue = _store.ProtectSecret(value);
+        }
+
+        SortUserSecrets(Settings.UserSecrets);
+        _secretsView.Refresh();
+        return true;
+    }
+
+    private bool CommitPendingSecretEditor()
+    {
+        if (string.IsNullOrWhiteSpace(SecretNameBox.Text) &&
+            string.IsNullOrWhiteSpace(SecretEnvBox.Text) &&
+            string.IsNullOrWhiteSpace(GetSecretValue()))
+        {
+            return false;
+        }
+
+        return UpsertSecretFromEditor();
+    }
+
+    private void ClearSecretEditor()
+    {
+        _updatingSecretEditor = true;
+        try
+        {
+            SecretsGrid.SelectedItem = null;
+            SecretNameBox.Clear();
+            SecretEnvBox.Clear();
+            SecretValueBox.Clear();
+            SecretValueTextBox.Clear();
+            SecretValueTextBox.Visibility = Visibility.Collapsed;
+            SecretValueBox.Visibility = Visibility.Visible;
+            RevealSecretIcon.Symbol = SymbolRegular.Eye20;
+        }
+        finally
+        {
+            _updatingSecretEditor = false;
         }
     }
 
@@ -531,6 +618,7 @@ public partial class SettingsWindow : Window
         Settings.WorkingDirectory = string.IsNullOrWhiteSpace(WorkingDirectoryBox.Text) ? null : WorkingDirectoryBox.Text.Trim();
         Settings.Permissions.AllowMcpByDefault = AllowMcpCheckBox.IsChecked == true;
         Settings.Permissions.AllowCustomToolsByDefault = AllowCustomToolsCheckBox.IsChecked == true;
+        CommitPendingSecretEditor();
         SortUserSecrets(Settings.UserSecrets);
         SortStringCollection(Settings.Permissions.AllowedTools);
         SortStringCollection(Settings.Permissions.AllowedHosts);

@@ -43,6 +43,10 @@ public sealed class LocalShortcutService : ILocalShortcutService
     private IReadOnlyList<LocalShortcut> CreateShortcuts() =>
     [
         new(
+            "/agent",
+            "Show and change the current session agent.",
+            ExecuteAgentShortcutAsync),
+        new(
             "/mcp",
             "Show MCP servers and tools for the current session.",
             ExecuteMcpShortcutAsync),
@@ -95,6 +99,51 @@ public sealed class LocalShortcutService : ILocalShortcutService
             GetArgumentText(trimmed, parts[0]),
             parts.Skip(1).ToArray());
         return true;
+    }
+
+    private async Task<LocalShortcutResult> ExecuteAgentShortcutAsync(LocalShortcutInvocation invocation)
+    {
+        StatusChanged?.Invoke(invocation.Chat, "Inspecting agents...");
+        try
+        {
+            var settings = _settingsStore.Load();
+            await _copilot.EnsureSessionForConfigurationAsync(invocation.Chat, settings);
+            var state = await _copilot.GetAgentSelectionAsync(invocation.Chat);
+            if (!state.IsLiveSession)
+            {
+                return new LocalShortcutResult(
+                    ChatMessageKind.Error,
+                    "Agents\n\nCould not start a Copilot session for this tab.");
+            }
+
+            if (state.Agents.Count == 0)
+            {
+                return new LocalShortcutResult(
+                    ChatMessageKind.System,
+                    "Agents\n\nNo user-invocable custom agents are available for the current session.");
+            }
+
+            var promptState = new ChatPromptState
+            {
+                Type = "agent",
+                AgentOptions = state.Agents.ToList(),
+                DefaultAgentName = state.DefaultAgentName,
+                AllowFreeform = false
+            };
+
+            return LocalShortcutResult.ForPromptCard(
+                "Agent settings",
+                "Choose which agents are enabled in this chat and select the active default agent for subsequent turns.",
+                promptState);
+        }
+        catch (Exception ex)
+        {
+            return new LocalShortcutResult(ChatMessageKind.Error, "Failed to inspect agents.\n\n" + ex.Message);
+        }
+        finally
+        {
+            StatusChanged?.Invoke(invocation.Chat, null);
+        }
     }
 
     private async Task<LocalShortcutResult> ExecuteMcpShortcutAsync(LocalShortcutInvocation invocation)
@@ -265,11 +314,14 @@ Instructions:
             await _copilot.CloseSessionAsync(invocation.Chat);
             invocation.Chat.CopilotSessionId = null;
             invocation.Chat.IsSessionMissing = false;
+            invocation.Chat.IsPending = false;
+            invocation.Chat.HasPendingUserInput = false;
             invocation.Chat.LastStatus = null;
 
             return new LocalShortcutResult(
                 ChatMessageKind.System,
-                "Session reset\n\nThe visible chat history was kept, but the next message will start a fresh Copilot conversation context for this tab.");
+                "Session reset\n\nThe visible chat history was kept, but the next message will start a fresh Copilot conversation context for this tab.",
+                ResetSessionUiState: true);
         }
         catch (Exception ex)
         {
@@ -484,8 +536,13 @@ public sealed record LocalShortcutResult(
     ChatMessageKind Kind,
     string Content,
     string? PromptToSend = null,
-    string? UserVisiblePrompt = null)
+    string? UserVisiblePrompt = null,
+    ChatPromptState? PromptState = null,
+    bool ResetSessionUiState = false)
 {
     public static LocalShortcutResult ForPrompt(string promptToSend, string userVisiblePrompt) =>
         new(ChatMessageKind.User, "", promptToSend, userVisiblePrompt);
+
+    public static LocalShortcutResult ForPromptCard(string content, string userVisiblePrompt, ChatPromptState promptState) =>
+        new(ChatMessageKind.Prompt, content, UserVisiblePrompt: userVisiblePrompt, PromptState: promptState);
 }

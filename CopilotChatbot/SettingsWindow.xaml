@@ -545,7 +545,8 @@
                                  TextChanged="SecretFilterBox_TextChanged"
                                  ToolTip="Filter user secrets" />
                         <Border Style="{StaticResource CardBorder}" Padding="0">
-                            <DataGrid x:Name="SecretsGrid" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single">
+                            <DataGrid x:Name="SecretsGrid" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single"
+                                      SelectionChanged="SecretsGrid_SelectionChanged">
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
                                     <DataGridTextColumn Header="Environment Variable" Binding="{Binding EnvironmentVariable}" Width="*" />

@@ -58,8 +58,20 @@ public partial class SessionInfoWindow : Window
         Populate(snapshot);
     }
 
+    public void UpdateSnapshot(SessionCapabilitiesSnapshot snapshot)
+    {
+        Populate(snapshot);
+    }
+
     private void Populate(SessionCapabilitiesSnapshot snap)
     {
+        McpEmptyText.Visibility = Visibility.Collapsed;
+        AgentsEmptyText.Visibility = Visibility.Collapsed;
+        SkillsEmptyText.Visibility = Visibility.Collapsed;
+        McpList.ItemsSource = null;
+        AgentsList.ItemsSource = null;
+        SkillsList.ItemsSource = null;
+
         // Subtitle
         SubtitleText.Text =
             $"{snap.McpServers.Count} MCP server{(snap.McpServers.Count == 1 ? "" : "s")}  ·  " +

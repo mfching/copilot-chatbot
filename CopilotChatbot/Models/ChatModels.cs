@@ -35,10 +35,18 @@ public sealed class ChatPromptState
     public bool IsAnswered { get; set; }
     public string Answer { get; set; } = "";
     public bool WasFreeform { get; set; }
+    public List<AgentPromptOption> AgentOptions { get; set; } = [];
+    public string DefaultAgentName { get; set; } = "";
 }
 
 public sealed record McpServerInfo(string Name, string Status, IReadOnlyList<string> Tools);
 public sealed record AgentInfo(string Name, string Status, string Source);
+public sealed record AgentPromptOption(
+    string Name,
+    string DisplayName,
+    string Description,
+    string Source,
+    bool IsEnabled);
 public sealed record SkillInfo(string Name, string? Description);
 public sealed record SessionCapabilitiesSnapshot(
     IReadOnlyList<McpServerInfo> McpServers,

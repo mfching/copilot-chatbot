@@ -39,6 +39,7 @@ It provides a tabbed chat UI, session restore, model selection, reasoning effort
   - Prompts that allow freeform input include an optional answer box and do not highlight a suggested choice as the default
   - Answered prompt articles disable their controls and collapse by default
   - Memory permission toggle through `/memory`
+  - Agent selection through `/agent`
 - GitHub token and user secrets with show/hide controls
 - Optional settings password for AES-256 encryption of sensitive settings
 - User secrets mapped to environment variables for Copilot CLI and MCP servers
@@ -46,6 +47,7 @@ It provides a tabbed chat UI, session restore, model selection, reasoning effort
 - MCP server, agent, and skill capability view
 - Local slash shortcuts for inspecting or changing runtime state
 - Extra agent and skill folder configuration
+- Project headers toggle their child tab visibility when clicked
 - Scheduled automation tasks with cron expressions, manual runs, run history, optional pre/post commands, Copilot steps, and file/HTTP/named-pipe handoff
 - Light, dark, system, and follow-the-sun theme options, including themed capability dialogs and chat scrollbars
 - Optional Windows tray notifications when Copilot needs user input
@@ -125,6 +127,7 @@ If a settings password is configured, the app derives an AES-256 key from that p
 Shortcuts are handled locally by the app and are not sent as chat prompts.
 
 - `/mcp` - show registered MCP servers, their status, and reported tools.
+- `/agent` - start the tab's Copilot session if needed, show available user-invocable agents, enable or disable them for this chat, and select the current session's default agent from an in-chat prompt card.
 - `/cwd` - show the effective Copilot CLI working directory.
 - `/cwd <folder>` - set the Copilot CLI working directory. Quoted paths, relative paths, `.`, and `~` are supported.
 - `/env` - show Copilot-relevant environment details. Token values are redacted.
@@ -141,6 +144,7 @@ Copilot permission requests and user-response requests are rendered directly ins
 - Permission prompts provide Deny, Allow once, Allow for session, and Save setting actions.
 - Choice prompts can be answered by clicking a choice button, with each choice shown on its own line.
 - Prompts that allow freeform input show an optional textbox alongside choice buttons.
+- Agent prompts show an enabled-agent checklist and a default-agent dropdown; submitting applies the selection to the current Copilot session.
 - When freeform input is allowed, suggested choices are not visually highlighted as the default response.
 - Once answered, prompt controls are disabled, the submitted answer is recorded, and the article collapses by default.
 - The tab shows an input-required marker while a prompt is waiting.

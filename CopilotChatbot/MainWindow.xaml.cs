@@ -24,6 +24,7 @@ namespace CopilotChatbot;
 
 public partial class MainWindow : Window
 {
+    private const string AppTitle = "Copilot Chatbot";
     private const double MinTabHeaderWidth = 184;
     private const double TabStripChromeWidth = 32;
     private readonly SettingsStore _settingsStore = new();
@@ -218,6 +219,7 @@ public partial class MainWindow : Window
             var snapshot = await _copilot.GetCapabilitiesSnapshotAsync(CurrentChat);
             if (_sessionInfoWindow is not null)
             {
+                _sessionInfoWindow.UpdateSnapshot(snapshot);
                 BringWindowToFront(_sessionInfoWindow);
                 return;
             }
@@ -264,6 +266,20 @@ public partial class MainWindow : Window
             UpdateMemoryCheckBox();
             ApplyTrayNotificationSetting();
             ApplyThemeFromMode();
+            _ = ApplySettingsToLiveSessionsAsync();
+        }
+    }
+
+    private async Task ApplySettingsToLiveSessionsAsync()
+    {
+        try
+        {
+            await _copilot.ApplySettingsEnvironmentAsync(_settings);
+            UpdateInputState();
+        }
+        catch (Exception ex)
+        {
+            _debugLogger.Log("APPLY-SETTINGS-SESSIONS-ERROR", ex.ToString());
         }
     }
 
@@ -289,6 +305,7 @@ public partial class MainWindow : Window
                 UpdateModelControlsForChat(chat);
                 _ = EnsureSelectedChatReadyAsync(chat);
             }
+            UpdateWindowTitle();
             SaveOpenChats();
         }
     }
@@ -392,7 +409,16 @@ public partial class MainWindow : Window
             if (string.IsNullOrWhiteSpace(shortcutResult.PromptToSend))
             {
                 chat.Messages.Add(new ChatMessage { Kind = ChatMessageKind.User, Content = prompt });
-                AddLocalShortcutMessage(chat, shortcutResult.Kind, shortcutResult.Content);
+                if (shortcutResult.ResetSessionUiState)
+                {
+                    CancelPendingPromptsForChat(chat);
+                    chat.IsPending = false;
+                    chat.HasPendingUserInput = false;
+                    chat.LastStatus = null;
+                    SetTabBusyIndicator(chat, false);
+                    GetTabContent(chat)?.SetState(false, chat.IsSessionMissing);
+                }
+                AddLocalShortcutMessage(chat, shortcutResult.Kind, shortcutResult.Content, shortcutResult.PromptState);
                 return;
             }
 
@@ -501,13 +527,18 @@ public partial class MainWindow : Window
         });
     }
 
-    private void AddLocalShortcutMessage(ChatSessionView chat, ChatMessageKind kind, string content)
+    private void AddLocalShortcutMessage(ChatSessionView chat, ChatMessageKind kind, string content, ChatPromptState? promptState = null)
     {
         chat.Messages.Add(new ChatMessage
         {
             Kind = kind,
-            Content = content
+            Content = content,
+            Prompt = promptState
         });
+        if (promptState is not null)
+        {
+            SetChatInputRequired(chat, true);
+        }
         RenderChat(chat);
         SaveOpenChats();
     }
@@ -829,7 +860,20 @@ public partial class MainWindow : Window
         {
             ToolTip = project.Name,
             Margin = new Thickness(0, 4, 0, 2),
+            Cursor = Cursors.Hand,
             Children = { icon, title, unreadIndicator, busySpinner, newChatButton, toggleButton }
+        };
+        header.MouseLeftButtonDown += (_, e) =>
+        {
+            if (e.ChangedButton != MouseButton.Left ||
+                IsFromNamedElement(e.OriginalSource, "ProjectToggleButton") ||
+                IsFromNamedElement(e.OriginalSource, "ProjectNewChatButton"))
+            {
+                return;
+            }
+
+            e.Handled = true;
+            ToggleProjectCollapsed(project);
         };
         header.SetResourceReference(WidthProperty, "TabHeaderContentWidth");
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -1230,7 +1274,7 @@ public partial class MainWindow : Window
         {
             ProjectId = effectiveProjectId,
             CopilotSessionId = persisted?.CopilotSessionId,
-            IsSessionMissing = persisted?.IsSessionMissing == true,
+            IsSessionMissing = persisted?.IsSessionMissing == true && string.IsNullOrWhiteSpace(persisted.CopilotSessionId),
             SystemPrompt = persisted is null
                 ? (string.IsNullOrWhiteSpace(_settings.DefaultSystemPrompt) ? null : _settings.DefaultSystemPrompt)
                 : persisted.SystemPrompt,
@@ -1240,6 +1284,10 @@ public partial class MainWindow : Window
                 ? _settings.DefaultAutoCollapsePreviousArticle
                 : persisted.AutoCollapsePreviousArticle
         };
+        if (persisted?.IsSessionMissing == true && !string.IsNullOrWhiteSpace(persisted.CopilotSessionId))
+        {
+            _debugLogger.Log("SESSION-RESTORE", $"Retrying previously missing session '{persisted.CopilotSessionId}' for '{chat.Title}'.");
+        }
         if (persisted is not null)
         {
             if (persisted.Messages.Count > 0)
@@ -1371,8 +1419,21 @@ public partial class MainWindow : Window
 
     private Task EnsureCopilotSessionResumedAsync(ChatSessionView chat)
     {
-        if (chat.IsSessionMissing || string.IsNullOrWhiteSpace(chat.CopilotSessionId) || _resumedSessions.Contains(chat))
+        if (chat.IsSessionMissing)
         {
+            _debugLogger.Log("SESSION-RESTORE", $"Skipped '{chat.Title}' because it is marked missing and has no retryable session id.");
+            return Task.CompletedTask;
+        }
+
+        if (string.IsNullOrWhiteSpace(chat.CopilotSessionId))
+        {
+            _debugLogger.Log("SESSION-RESTORE", $"Skipped '{chat.Title}' because it has no saved Copilot session id.");
+            return Task.CompletedTask;
+        }
+
+        if (_resumedSessions.Contains(chat))
+        {
+            _debugLogger.Log("SESSION-RESTORE", $"Skipped '{chat.Title}' because it is already resumed.");
             return Task.CompletedTask;
         }
 
@@ -1392,11 +1453,14 @@ public partial class MainWindow : Window
         {
             GetTabContent(chat)?.SetLoading(true, "Restoring Copilot session...");
             var model = GetSelectedModelForChat(chat);
+            _debugLogger.Log("SESSION-RESTORE", $"Resuming '{chat.Title}' session '{chat.CopilotSessionId}' | model={model?.Id ?? _settings.SelectedModelId} | reasoning={chat.SelectedReasoningEffort ?? _settings.SelectedReasoningEffort ?? "default"}");
             await _copilot.ResumeSessionAsync(chat, _settings, model, chat.SelectedReasoningEffort);
             _resumedSessions.Add(chat);
+            _debugLogger.Log("SESSION-RESTORE", $"Resumed '{chat.Title}' session '{chat.CopilotSessionId}'.");
         }
         catch (Exception ex)
         {
+            _debugLogger.Log("SESSION-RESTORE-ERROR", $"Failed to resume '{chat.Title}' session '{chat.CopilotSessionId}'.\n{ex}");
             MarkSessionMissing(chat, $"Copilot session '{chat.CopilotSessionId}' could not be found or resumed.\n\n{ex.Message}");
         }
         finally
@@ -1511,6 +1575,7 @@ public partial class MainWindow : Window
 
     private void MarkSessionMissing(ChatSessionView chat, string reason)
     {
+        _debugLogger.Log("SESSION-MISSING", $"{chat.Title} | session={chat.CopilotSessionId ?? "(none)"} | {reason}");
         chat.IsSessionMissing = true;
         chat.IsPending = false;
         SetTabBusyIndicator(chat, false);
@@ -1578,7 +1643,7 @@ public partial class MainWindow : Window
             SelectedModelId = chat.SelectedModelId,
             SelectedReasoningEffort = chat.SelectedReasoningEffort,
             AutoCollapsePreviousArticle = chat.AutoCollapsePreviousArticle,
-            IsSessionMissing = chat.IsSessionMissing,
+            IsSessionMissing = chat.IsSessionMissing && string.IsNullOrWhiteSpace(chat.CopilotSessionId),
             Messages = chat.Messages.Select(message => new PersistedChatMessage
             {
                 Id = message.Id,
@@ -2093,6 +2158,7 @@ public partial class MainWindow : Window
         project.Name = dialog.TabTitle;
         UpdateProjectHeader(project);
         RefreshSessionTabContextMenus();
+        UpdateWindowTitle();
         SaveOpenChats();
     }
 
@@ -2182,6 +2248,7 @@ public partial class MainWindow : Window
             chat.Title = dialog.TabTitle;
             SetTabHeader(tab, chat.Title);
             tab.ContextMenu = BuildTabContextMenu(tab);
+            UpdateWindowTitle();
             SaveOpenChats();
         }
     }
@@ -2511,6 +2578,8 @@ public partial class MainWindow : Window
 
     private sealed record BrowserBridgeMessage(string Type, string? Id, string? Html, string? HtmlBase64, string? Value, string? Mode, string? FrameKey);
 
+    private sealed record AgentPromptSubmission(HashSet<string> EnabledAgentNames, string DefaultAgentName);
+
     private Task<PermissionPromptDecision> PromptForPermissionAsync(ChatSessionView chat, PermissionPrompt prompt)
     {
         var promptId = $"permission-{Guid.NewGuid():N}";
@@ -2566,7 +2635,7 @@ public partial class MainWindow : Window
         SaveOpenChats();
     }
 
-    private void HandlePromptResponse(ChatSessionView chat, string promptId, string value, string mode)
+    private async void HandlePromptResponse(ChatSessionView chat, string promptId, string value, string mode)
     {
         var message = chat.Messages.FirstOrDefault(message => message.Id == promptId);
         if (message?.Prompt is not { IsAnswered: false } promptState)
@@ -2575,6 +2644,12 @@ public partial class MainWindow : Window
         }
 
         value = value.Trim();
+        if (promptState.Type.Equals("agent", StringComparison.OrdinalIgnoreCase))
+        {
+            await HandleAgentPromptResponseAsync(chat, message, promptState, value);
+            return;
+        }
+
         promptState.IsAnswered = true;
         promptState.Answer = value;
         promptState.WasFreeform = mode.Equals("freeform", StringComparison.OrdinalIgnoreCase);
@@ -2595,14 +2670,98 @@ public partial class MainWindow : Window
         SaveOpenChats();
     }
 
+    private async Task HandleAgentPromptResponseAsync(ChatSessionView chat, ChatMessage message, ChatPromptState promptState, string value)
+    {
+        try
+        {
+            var request = ParseAgentPromptValue(value);
+            var result = await _copilot.ApplyAgentSelectionAsync(chat, request.EnabledAgentNames, request.DefaultAgentName);
+            promptState.IsAnswered = true;
+            promptState.WasFreeform = false;
+            promptState.AgentOptions = promptState.AgentOptions
+                .Select(option => option with { IsEnabled = request.EnabledAgentNames.Contains(option.Name, StringComparer.OrdinalIgnoreCase) })
+                .ToList();
+            promptState.DefaultAgentName = result.DefaultAgentName;
+            promptState.Answer = FormatAgentPromptAnswer(result);
+            message.CompletedAt = DateTimeOffset.Now;
+            _pendingPromptChats.Remove(message.Id);
+            SetChatInputRequired(chat, HasPendingPrompt(chat));
+            await RefreshSessionInfoWindowAsync(chat);
+            RenderChat(chat);
+            SaveOpenChats();
+        }
+        catch (Exception ex)
+        {
+            chat.Messages.Add(new ChatMessage
+            {
+                Kind = ChatMessageKind.Error,
+                Content = "Failed to apply agent settings.\n\n" + ex.Message
+            });
+            _pendingPromptChats.Remove(message.Id);
+            SetChatInputRequired(chat, HasPendingPrompt(chat));
+            RenderChat(chat);
+            SaveOpenChats();
+        }
+    }
+
+    private async Task RefreshSessionInfoWindowAsync(ChatSessionView chat)
+    {
+        if (_sessionInfoWindow is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var snapshot = await _copilot.GetCapabilitiesSnapshotAsync(chat);
+            _sessionInfoWindow.UpdateSnapshot(snapshot);
+        }
+        catch (Exception ex)
+        {
+            _debugLogger.Log("SESSION-INFO-REFRESH-ERROR", ex.Message);
+        }
+    }
+
+    private static AgentPromptSubmission ParseAgentPromptValue(string value)
+    {
+        using var doc = JsonDocument.Parse(value);
+        var root = doc.RootElement;
+        var enabled = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (root.TryGetProperty("enabled", out var enabledProp) && enabledProp.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in enabledProp.EnumerateArray())
+            {
+                if (item.GetString() is { Length: > 0 } agentName)
+                {
+                    enabled.Add(agentName);
+                }
+            }
+        }
+
+        var defaultAgent = root.TryGetProperty("defaultAgent", out var defaultProp)
+            ? defaultProp.GetString() ?? ""
+            : "";
+
+        return new AgentPromptSubmission(enabled, defaultAgent);
+    }
+
+    private static string FormatAgentPromptAnswer(AgentApplyResult result)
+    {
+        var selected = string.IsNullOrWhiteSpace(result.DefaultAgentName)
+            ? "(default agent)"
+            : result.DefaultAgentName;
+        return $"{result.EnabledCount} enabled; default: {selected}";
+    }
+
     private void SetChatInputRequired(ChatSessionView chat, bool isRequired)
     {
         chat.HasPendingUserInput = isRequired;
         SetTabBusyIndicator(chat, chat.IsPending);
     }
 
-    private bool HasPendingPrompt(ChatSessionView chat) =>
-        _pendingPromptChats.Any(pair => ReferenceEquals(pair.Value, chat));
+    private static bool HasPendingPrompt(ChatSessionView chat) =>
+        chat.Messages.Any(message => message.Prompt is { IsAnswered: false });
 
     private bool CancelPendingPromptsForChat(ChatSessionView chat)
     {
@@ -2853,6 +3012,28 @@ public partial class MainWindow : Window
 
     private ChatSessionView? CurrentChat => (ChatTabs.SelectedItem as TabItem)?.Tag as ChatSessionView;
 
+    private void UpdateWindowTitle()
+    {
+        if (CurrentChat is not { } chat)
+        {
+            Title = AppTitle;
+            return;
+        }
+
+        var sessionTitle = string.IsNullOrWhiteSpace(chat.Title) ? "Chat" : chat.Title;
+        if (string.Equals(chat.ProjectId, PersistedChatProject.DefaultProjectId, StringComparison.OrdinalIgnoreCase))
+        {
+            Title = $"{AppTitle} - {sessionTitle}";
+            return;
+        }
+
+        var projectName = _projects.FirstOrDefault(project =>
+                string.Equals(project.Id, chat.ProjectId, StringComparison.OrdinalIgnoreCase))
+            ?.Name;
+        projectName = string.IsNullOrWhiteSpace(projectName) ? chat.ProjectId : projectName;
+        Title = $"{AppTitle} - {projectName} : {sessionTitle}";
+    }
+
     private void UpdateInputState()
     {
         if (CurrentChat is { } chat)
@@ -2864,6 +3045,7 @@ public partial class MainWindow : Window
         {
             UpdateModelControlsForChat(null);
         }
+        UpdateWindowTitle();
     }
 
     private void RenderCurrentChat()

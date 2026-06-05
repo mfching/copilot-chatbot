@@ -25,8 +25,11 @@ public sealed class CopilotChatService : IAsyncDisposable
     private readonly ConcurrentDictionary<string, byte> _sessionPermissionApprovals = [];
     private readonly ConcurrentDictionary<string, byte> _sessionHostApprovals = [];
     private readonly ConcurrentDictionary<string, byte> _sessionToolApprovals = [];
+    private readonly ConcurrentDictionary<ChatSessionView, AgentSelectionPreference> _agentSelections = [];
     private readonly ConcurrentQueue<ChatUpdate> _pendingChatUpdates = new();
     private readonly ConcurrentDictionary<ChatSessionView, ResponseBufferOptions> _responseBufferOptions = [];
+    private readonly Dictionary<string, string?> _originalSecretEnvironmentValues = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _managedSecretEnvironmentVariables = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, McpServerConfig> _mcpServerConfigs = new();
     private readonly HashSet<string> _mcpServerNames = new(StringComparer.OrdinalIgnoreCase);
     private int _chatUpdateFlushScheduled;
@@ -114,6 +117,91 @@ public sealed class CopilotChatService : IAsyncDisposable
         }
     }
 
+    public async Task EnsureSessionForConfigurationAsync(
+        ChatSessionView chat,
+        AppSettings settings,
+        ModelChoice? model = null,
+        string? reasoningEffort = null)
+    {
+        SetResponseBufferOptions(chat, settings);
+        await EnsureSessionAsync(chat, settings, model, reasoningEffort ?? settings.SelectedReasoningEffort);
+    }
+
+    public async Task<AgentSelectionState> GetAgentSelectionAsync(ChatSessionView chat, CancellationToken cancellationToken = default)
+    {
+        if (!_sessions.TryGetValue(chat, out var session))
+        {
+            var fallbackAgents = _capabilitiesSnapshot.Agents
+                .Select(agent => new AgentPromptOption(agent.Name, agent.Name, "", agent.Source, true))
+                .OrderBy(agent => agent.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            return new AgentSelectionState(fallbackAgents, "", IsLiveSession: false);
+        }
+
+        var list = await session.Rpc.Agent.ListAsync(cancellationToken);
+        var current = await session.Rpc.Agent.GetCurrentAsync(cancellationToken);
+        var agentOptions = list.Agents
+            .Where(agent => agent.UserInvocable != false)
+            .Where(agent => !string.IsNullOrWhiteSpace(agent.Name))
+            .Select(agent => new AgentPromptOption(
+                agent.Name,
+                string.IsNullOrWhiteSpace(agent.DisplayName) ? agent.Name : agent.DisplayName,
+                agent.Description ?? "",
+                agent.Source?.Value ?? "custom",
+                IsAgentEnabled(chat, agent.Name)))
+            .DistinctBy(agent => NormalizeKey(agent.Name))
+            .OrderBy(agent => agent.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return new AgentSelectionState(
+            agentOptions,
+            current.Agent?.Name ?? "",
+            IsLiveSession: true);
+    }
+
+    public async Task<AgentApplyResult> ApplyAgentSelectionAsync(
+        ChatSessionView chat,
+        IReadOnlyCollection<string> enabledAgentNames,
+        string? defaultAgentName,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_sessions.TryGetValue(chat, out var session))
+        {
+            throw new InvalidOperationException("Start a Copilot session before changing agents.");
+        }
+
+        var list = await session.Rpc.Agent.ListAsync(cancellationToken);
+        var available = list.Agents
+            .Where(agent => agent.UserInvocable != false)
+            .Where(agent => !string.IsNullOrWhiteSpace(agent.Name))
+            .GroupBy(agent => NormalizeKey(agent.Name))
+            .Select(group => group.First())
+            .ToDictionary(agent => agent.Name, StringComparer.OrdinalIgnoreCase);
+
+        var enabled = enabledAgentNames
+            .Where(name => available.ContainsKey(name))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _agentSelections[chat] = new AgentSelectionPreference(enabled);
+
+        defaultAgentName = string.IsNullOrWhiteSpace(defaultAgentName) ? "" : defaultAgentName.Trim();
+        if (!string.IsNullOrWhiteSpace(defaultAgentName) && !enabled.Contains(defaultAgentName))
+        {
+            throw new InvalidOperationException("The default agent must be enabled before it can be selected.");
+        }
+
+        if (string.IsNullOrWhiteSpace(defaultAgentName))
+        {
+            await session.Rpc.Agent.DeselectAsync(cancellationToken);
+        }
+        else
+        {
+            await session.Rpc.Agent.SelectAsync(defaultAgentName, cancellationToken);
+        }
+
+        _logger.Log("AGENT-SELECTION", $"Enabled={string.Join(", ", enabled.OrderBy(x => x, StringComparer.OrdinalIgnoreCase))} | Default={(string.IsNullOrWhiteSpace(defaultAgentName) ? "(default)" : defaultAgentName)}");
+        return new AgentApplyResult(enabled.Count, string.IsNullOrWhiteSpace(defaultAgentName) ? "" : defaultAgentName);
+    }
+
     public async Task AbortAsync(ChatSessionView chat)
     {
         if (_sessions.TryGetValue(chat, out var session))
@@ -138,7 +226,7 @@ public sealed class CopilotChatService : IAsyncDisposable
             var customAgents = result.Agents
                 .Select(agent => new AgentInfo(
                     string.IsNullOrWhiteSpace(agent.DisplayName) ? agent.Name : agent.DisplayName,
-                    "loaded",
+                    IsAgentEnabled(chat, agent.Name) ? "enabled" : "disabled",
                     GetString(agent, "Source") ?? "custom"))
                 .Where(agent => !string.IsNullOrWhiteSpace(agent.Name) && agent.Name != "?")
                 .ToList();
@@ -157,22 +245,46 @@ public sealed class CopilotChatService : IAsyncDisposable
             _logger.Log("AGENTS-LIST-ERROR", ex.Message);
         }
 
-        return _capabilitiesSnapshot;
+        return WithAgentSelectionStatus(_capabilitiesSnapshot, chat);
     }
 
     public async Task CloseSessionAsync(ChatSessionView chat)
     {
+        _agentSelections.TryRemove(chat, out _);
         if (_sessions.TryRemove(chat, out var session))
         {
-            try
-            {
-                await session.DisposeAsync();
-            }
-            catch
-            {
-                // Closing a tab should not fail if the CLI already dropped the session.
-            }
+            await DisposeSessionQuietlyAsync(session);
         }
+    }
+
+    public async Task ApplySettingsEnvironmentAsync(AppSettings settings)
+    {
+        ApplyUserSecretsToProcessEnvironment(settings);
+
+        if (_sessions.Count > 0)
+        {
+            _logger.Log(
+                "APPLY-SETTINGS-ENV",
+                $"Applied user secrets to the app environment. Existing live sessions remain connected. liveSessions={_sessions.Count} clientStarted={_client is not null} secrets={FormatSecretEnvironmentNames(settings)}");
+            return;
+        }
+
+        if (_client is not null)
+        {
+            _logger.Log(
+                "APPLY-SETTINGS-ENV",
+                $"Resetting idle Copilot client so the next session gets updated environment. liveSessions=0 secrets={FormatSecretEnvironmentNames(settings)}");
+            await DisposeClientQuietlyAsync(_client);
+            _client = null;
+            _mcpServerConfigs.Clear();
+            _mcpServerNames.Clear();
+            _capabilitiesSnapshot = new SessionCapabilitiesSnapshot([], [], []);
+            return;
+        }
+
+        _logger.Log(
+            "APPLY-SETTINGS-ENV",
+            $"Applied user secrets to the app environment. No Copilot client is running. liveSessions=0 secrets={FormatSecretEnvironmentNames(settings)}");
     }
 
     /// <summary>
@@ -440,9 +552,11 @@ public sealed class CopilotChatService : IAsyncDisposable
     {
         if (_client is not null)
         {
+            _logger.Log("CLIENT", $"Reusing Copilot client. secrets={FormatSecretEnvironmentNames(settings)}");
             return _client;
         }
 
+        ApplyUserSecretsToProcessEnvironment(settings);
         var token = await ResolveGitHubTokenAsync(settings.CommandLineGitHubToken);
         var env = CreateProcessEnvironment();
         foreach (var secret in settings.UserSecrets.Where(s => !string.IsNullOrWhiteSpace(s.EnvironmentVariable)))
@@ -475,6 +589,7 @@ public sealed class CopilotChatService : IAsyncDisposable
 
         try
         {
+            _logger.Log("CLIENT", $"Starting Copilot client. cwd={cwd} bundledCli={(string.IsNullOrWhiteSpace(bundledCliPath) ? "no" : "yes")} envKeys={FormatEnvironmentKeys(env, settings)}");
             await client.StartAsync(cancellationToken);
             _client = client;
             await LoadUserMcpConfigAsync(client, cwd, cancellationToken);
@@ -485,6 +600,68 @@ public sealed class CopilotChatService : IAsyncDisposable
             await DisposeClientQuietlyAsync(client);
             throw;
         }
+    }
+
+    private void ApplyUserSecretsToProcessEnvironment(AppSettings settings)
+    {
+        var desired = settings.UserSecrets
+            .Where(secret => !string.IsNullOrWhiteSpace(secret.EnvironmentVariable))
+            .GroupBy(secret => secret.EnvironmentVariable.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => _settingsStore.UnprotectSecret(group.Last().EncryptedValue),
+                StringComparer.OrdinalIgnoreCase);
+
+        var removedNames = _managedSecretEnvironmentVariables.Except(desired.Keys, StringComparer.OrdinalIgnoreCase).ToArray();
+        foreach (var name in removedNames)
+        {
+            Environment.SetEnvironmentVariable(
+                name,
+                _originalSecretEnvironmentValues.GetValueOrDefault(name));
+            _managedSecretEnvironmentVariables.Remove(name);
+        }
+
+        foreach (var (name, value) in desired)
+        {
+            if (!_originalSecretEnvironmentValues.ContainsKey(name))
+            {
+                _originalSecretEnvironmentValues[name] = Environment.GetEnvironmentVariable(name);
+            }
+
+            Environment.SetEnvironmentVariable(name, value);
+            _managedSecretEnvironmentVariables.Add(name);
+        }
+
+        _logger.Log(
+            "ENV-SECRETS",
+            $"Applied process env secrets. desired={FormatSecretEnvironmentNames(settings)} managed={FormatNames(_managedSecretEnvironmentVariables)} removed={FormatNames(removedNames)}");
+    }
+
+    private static string FormatSecretEnvironmentNames(AppSettings settings) =>
+        FormatNames(settings.UserSecrets
+            .Select(secret => secret.EnvironmentVariable?.Trim())
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Cast<string>());
+
+    private static string FormatEnvironmentKeys(IReadOnlyDictionary<string, string> env, AppSettings settings)
+    {
+        var names = settings.UserSecrets
+            .Select(secret => secret.EnvironmentVariable?.Trim())
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Cast<string>()
+            .Select(name => env.ContainsKey(name) ? $"{name}:present" : $"{name}:missing");
+        var github = env.ContainsKey("GITHUB_TOKEN") ? "GITHUB_TOKEN:present" : "GITHUB_TOKEN:missing";
+        return FormatNames(names.Append(github));
+    }
+
+    private static string FormatNames(IEnumerable<string> names)
+    {
+        var values = names
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return values.Length == 0 ? "(none)" : string.Join(", ", values);
     }
 
     // Reads MCP server configs from known locations and registers each server with the SDK.
@@ -884,6 +1061,31 @@ public sealed class CopilotChatService : IAsyncDisposable
         return decision != PermissionPromptDecision.Deny
             ? PermissionDecision.ApproveOnce()
             : PermissionDecision.Reject();
+    }
+
+    private bool IsAgentEnabled(ChatSessionView chat, string agentName)
+    {
+        return !_agentSelections.TryGetValue(chat, out var selection) ||
+               selection.EnabledAgentNames.Contains(agentName);
+    }
+
+    private SessionCapabilitiesSnapshot WithAgentSelectionStatus(SessionCapabilitiesSnapshot snapshot, ChatSessionView chat)
+    {
+        if (!_agentSelections.TryGetValue(chat, out var selection))
+        {
+            return snapshot;
+        }
+
+        var agents = snapshot.Agents
+            .Select(agent => agent with
+            {
+                Status = agent.Status.Equals("enabled", StringComparison.OrdinalIgnoreCase) ||
+                         agent.Status.Equals("disabled", StringComparison.OrdinalIgnoreCase)
+                    ? agent.Status
+                    : selection.EnabledAgentNames.Contains(agent.Name) ? "enabled" : "disabled"
+            })
+            .ToList();
+        return new SessionCapabilitiesSnapshot(snapshot.McpServers, agents, snapshot.Skills);
     }
 
     private static readonly HashSet<string> _implicitlyApprovedHosts = new(StringComparer.OrdinalIgnoreCase)
@@ -2238,6 +2440,18 @@ public sealed class CopilotChatService : IAsyncDisposable
             // The Copilot CLI may already be gone, especially after a native startup failure.
         }
     }
+
+    private static async Task DisposeSessionQuietlyAsync(CopilotSession session)
+    {
+        try
+        {
+            await session.DisposeAsync();
+        }
+        catch
+        {
+            // Closing or recreating a session should not fail if the CLI already dropped it.
+        }
+    }
 }
 
 public enum PermissionPromptDecision
@@ -2262,3 +2476,12 @@ public sealed record ShellCommandPermission(string Identifier, bool ReadOnly);
 public sealed record UserInputPrompt(string Question, IReadOnlyList<string> Choices, bool AllowFreeform, string? SessionTitle = null);
 
 public sealed record UserInputPromptResult(string Answer, bool WasFreeform);
+
+public sealed record AgentSelectionState(
+    IReadOnlyList<AgentPromptOption> Agents,
+    string DefaultAgentName,
+    bool IsLiveSession);
+
+public sealed record AgentApplyResult(int EnabledCount, string DefaultAgentName);
+
+internal sealed record AgentSelectionPreference(HashSet<string> EnabledAgentNames);

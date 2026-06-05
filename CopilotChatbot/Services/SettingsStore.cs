@@ -229,12 +229,12 @@ public sealed class SettingsStore
 
     private static byte[] DeriveSettingsKey(string password)
     {
-        using var pbkdf2 = new Rfc2898DeriveBytes(
+        return Rfc2898DeriveBytes.Pbkdf2(
             password,
             PasswordSalt,
             KeyDerivationIterations,
-            HashAlgorithmName.SHA256);
-        return pbkdf2.GetBytes(KeySizeBytes);
+            HashAlgorithmName.SHA256,
+            KeySizeBytes);
     }
 }
 
