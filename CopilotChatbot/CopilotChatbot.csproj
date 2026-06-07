@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFrameworks>net9.0-windows;net10.0-windows</TargetFrameworks>
     <NoWarn>$(NoWarn);GHCP001</NoWarn>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -24,11 +24,18 @@
   <ItemGroup>
     <PackageReference Include="GitHub.Copilot.SDK" Version="1.0.0" />
     <PackageReference Include="Markdig.Signed" Version="1.2.0" />
-    <PackageReference Include="Microsoft.PowerShell.SDK" Version="7.6.2" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3967.48" />
     <PackageReference Include="NCrontab" Version="3.4.0" />
     <PackageReference Include="Nerdbank.MessagePack" Version="1.2.4" />
     <PackageReference Include="WPF-UI" Version="4.3.0" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0-windows'">
+    <PackageReference Include="Microsoft.PowerShell.SDK" Version="7.5.3" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-windows'">
+    <PackageReference Include="Microsoft.PowerShell.SDK" Version="7.6.2" />
   </ItemGroup>
 
 </Project>
