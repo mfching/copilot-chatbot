@@ -2661,6 +2661,11 @@ public partial class MainWindow : Window
         }
         else if (_pendingUserInputPrompts.Remove(promptId, out var inputTcs))
         {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                StagePreviousArticleAutoCollapse(chat);
+            }
+
             inputTcs.TrySetResult(new UserInputPromptResult(value, promptState.WasFreeform));
         }
 

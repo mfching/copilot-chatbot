@@ -408,7 +408,7 @@
                 <!-- Auto-collapse previous message article when sending -->
                 <ToggleButton x:Name="AutoCollapsePreviousBtn" DockPanel.Dock="Right"
                               Width="24" Height="24" Margin="0,0,6,0" Cursor="Hand"
-                              ToolTip="Auto-collapse previous article on send"
+                              ToolTip="Auto-collapse previous message"
                               Checked="AutoCollapsePrevious_Checked"
                               Unchecked="AutoCollapsePrevious_Checked">
                     <ToggleButton.Template>

@@ -153,8 +153,8 @@ public partial class ChatTabContent : UserControl
         {
             AutoCollapsePreviousBtn.IsChecked = enabled;
             AutoCollapsePreviousBtn.ToolTip = enabled
-                ? "Auto-collapse previous article on send is on"
-                : "Auto-collapse previous article on send is off";
+                ? "Auto-collapse previous message on send is on"
+                : "Auto-collapse previous message on send is off";
         }
         finally
         {
@@ -234,8 +234,8 @@ public partial class ChatTabContent : UserControl
 
         var enabled = AutoCollapsePreviousBtn.IsChecked == true;
         AutoCollapsePreviousBtn.ToolTip = enabled
-            ? "Auto-collapse previous article on send is on"
-            : "Auto-collapse previous article on send is off";
+            ? "Auto-collapse previous message on send is on"
+            : "Auto-collapse previous message on send is off";
         AutoCollapsePreviousArticleChanged?.Invoke(enabled);
     }
 
