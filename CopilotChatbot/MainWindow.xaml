@@ -6,6 +6,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
     Title="Copilot Chatbot"
+    Icon="Assets/AppIcon.ico"
     Width="1280"
     Height="820"
     MinWidth="1080"
@@ -218,9 +219,9 @@
                                 BorderThickness="1,1,0,1"
                                 CornerRadius="12,0,0,12">
                                 <ScrollViewer
+                                    CanContentScroll="False"
                                     HorizontalScrollBarVisibility="Disabled"
-                                    VerticalScrollBarVisibility="Auto"
-                                    CanContentScroll="False">
+                                    VerticalScrollBarVisibility="Auto">
                                     <TabPanel
                                         Panel.ZIndex="1"
                                         IsItemsHost="True"
@@ -234,8 +235,8 @@
                                 VerticalAlignment="Stretch"
                                 Background="Transparent"
                                 Cursor="SizeWE"
-                                DragDelta="TabStripSplitter_DragDelta"
-                                DragCompleted="TabStripSplitter_DragCompleted" />
+                                DragCompleted="TabStripSplitter_DragCompleted"
+                                DragDelta="TabStripSplitter_DragDelta" />
                             <Border
                                 Grid.Column="2"
                                 Background="{TemplateBinding Background}"

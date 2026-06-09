@@ -2223,31 +2223,7 @@ public sealed class CopilotChatService : IAsyncDisposable
 
     private static async Task<string?> ResolveGitHubTokenAsync(string? settingsToken)
     {
-        if (!string.IsNullOrWhiteSpace(settingsToken))
-            return settingsToken;
-
-        // Fall back to the token stored by the GitHub CLI (gh auth login).
-        // This is the same credential source that `gh` commands use.
-        try
-        {
-            var psi = new System.Diagnostics.ProcessStartInfo("gh", "auth token")
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-            using var proc = System.Diagnostics.Process.Start(psi);
-            if (proc is null) return null;
-            var output = await proc.StandardOutput.ReadToEndAsync();
-            await proc.WaitForExitAsync();
-            var token = output.Trim();
-            return string.IsNullOrWhiteSpace(token) ? null : token;
-        }
-        catch
-        {
-            return null;
-        }
+        return settingsToken;
     }
 
     private static Dictionary<string, string> CreateProcessEnvironment()
