@@ -37,6 +37,7 @@ jobs:
     - name: Publish single-file binary
       run: >
         dotnet publish $env:Project_Path
+        --framework net9.0-windows
         --configuration Release
         --runtime win-x64
         --self-contained true
