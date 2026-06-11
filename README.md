@@ -191,6 +191,7 @@ Chat sessions are still saved as a flat session list for backward compatibility.
   - `<working-dir>/.github/copilot/mcp.json`
   - `<working-dir>/.copilot/mcp-config.json`
 - A default read-only GitHub MCP server is added when missing and is also available as a bundled fallback.
+- To permanently disable MCP for a built binary, build or publish with `-p:EnableMcpServers=false`. This compile-time property prevents MCP config registration and omits the bundled MCP server metadata from the output.
 - Existing MCP server entries are not overwritten; server names are first-wins.
 - The default GitHub MCP server uses `https://api.githubcopilot.com/mcp/readonly` and keeps `Authorization: Bearer $env:GITHUB_TOKEN` in config so the Copilot SDK/runtime can resolve the environment variable.
 - The saved GitHub token is injected into the child process as `GITHUB_TOKEN`; `--gh-token` is used only for the Copilot session token.

@@ -11,6 +11,11 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+    <EnableMcpServers>true</EnableMcpServers>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(EnableMcpServers)' == 'false'">
+    <DefineConstants>$(DefineConstants);COPILOTCHATBOT_DISABLE_MCP</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -18,7 +23,7 @@
     <Using Remove="System.Windows.Forms" />
     <Resource Include="Assets\AppIcon.ico" />
     <None Include="Assets\AppIcon.svg" />
-    <EmbeddedResource Include="Assets\builtin-mcp-servers.json" />
+    <EmbeddedResource Include="Assets\builtin-mcp-servers.json" Condition="'$(EnableMcpServers)' != 'false'" />
   </ItemGroup>
 
   <ItemGroup>

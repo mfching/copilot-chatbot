@@ -592,7 +592,11 @@ public sealed class CopilotChatService : IAsyncDisposable
             _logger.Log("CLIENT", $"Starting Copilot client. cwd={cwd} bundledCli={(string.IsNullOrWhiteSpace(bundledCliPath) ? "no" : "yes")} envKeys={FormatEnvironmentKeys(env, settings)}");
             await client.StartAsync(cancellationToken);
             _client = client;
+#if COPILOTCHATBOT_DISABLE_MCP
+            _logger.Log("MCP-CONFIG", "MCP servers disabled by build property EnableMcpServers=false.");
+#else
             await LoadUserMcpConfigAsync(client, cwd, cancellationToken);
+#endif
             return _client;
         }
         catch
